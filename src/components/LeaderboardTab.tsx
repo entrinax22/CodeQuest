@@ -1,0 +1,510 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Trophy, TrendingUp, TrendingDown, Minus, Crown, Timer, 
+  Gift, Sparkles, CheckCircle2, Zap, Heart, Shield, Award,
+  RefreshCw, ChevronRight, Check, Gem, Flame
+} from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useGameStore } from '../store/useGameStore';
+import { sounds } from '../lib/sound';
+
+interface LeaderboardUser {
+  id: string;
+  username: string;
+  xp: number;
+  weekly_xp?: number;
+  rank: number;
+  change: 'up' | 'down' | 'none';
+  league_id?: string;
+}
+
+interface LeagueMeta {
+  id: string;
+  name: string;
+  emoji: string;
+  tierTag: string;
+  minXp: number;
+  maxXp: number;
+  color: string;
+  glowColor: string;
+  bg: string;
+  border: string;
+  badgeBg: string;
+  iconBg: string;
+  pillColor: string;
+  avatarRing: string;
+  rewards: string;
+  firstPrize: number;
+  description: string;
+}
+
+const LEAGUES: LeagueMeta[] = [
+  { 
+    id: 'bronze',
+    name: 'Bronze',
+    emoji: '🥉',
+    tierTag: 'Tier I Novice',
+    minXp: 0, 
+    maxXp: 999, 
+    color: 'text-amber-400',
+    glowColor: 'shadow-amber-900/40',
+    bg: 'bg-gradient-to-br from-amber-600/25 via-amber-700/15 to-orange-950/40', 
+    border: 'border-amber-500/40',
+    badgeBg: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    iconBg: 'from-amber-500 via-amber-600 to-amber-800 text-amber-100 border-amber-400/50',
+    pillColor: 'text-amber-300',
+    avatarRing: 'ring-amber-500/50',
+    rewards: '100 XP + 1 Heart Refill',
+    firstPrize: 150,
+    description: 'The journey begins! Consistent coding habits unlock promotion to Silver.',
+  },
+  { 
+    id: 'silver',
+    name: 'Silver',
+    emoji: '🥈',
+    tierTag: 'Tier II Apprentice',
+    minXp: 1000, 
+    maxXp: 2499, 
+    color: 'text-slate-200', 
+    glowColor: 'shadow-slate-600/30',
+    bg: 'bg-gradient-to-br from-slate-400/25 via-slate-600/15 to-cyan-950/30', 
+    border: 'border-slate-300/40',
+    badgeBg: 'bg-slate-300/15 text-slate-200 border-slate-300/30',
+    iconBg: 'from-slate-300 via-slate-400 to-slate-600 text-slate-900 border-slate-200',
+    pillColor: 'text-slate-200',
+    avatarRing: 'ring-slate-300/50',
+    rewards: '250 XP + 2 Heart Refills',
+    firstPrize: 350,
+    description: 'Sharpen your engineering speed and climb the ranks toward Gold.',
+  },
+  { 
+    id: 'gold',
+    name: 'Gold',
+    emoji: '🥇',
+    tierTag: 'Tier III Veteran',
+    minXp: 2500, 
+    maxXp: 4999, 
+    color: 'text-yellow-300', 
+    glowColor: 'shadow-yellow-500/30',
+    bg: 'bg-gradient-to-br from-yellow-400/25 via-amber-500/15 to-orange-950/40', 
+    border: 'border-yellow-400/50',
+    badgeBg: 'bg-yellow-400/15 text-yellow-300 border-yellow-400/40',
+    iconBg: 'from-yellow-300 via-amber-400 to-yellow-600 text-amber-950 border-yellow-200',
+    pillColor: 'text-yellow-300',
+    avatarRing: 'ring-yellow-400/50',
+    rewards: '500 XP + 3 Hearts + 2X XP Potion',
+    firstPrize: 700,
+    description: 'Premier league of top developers. Top 10 ascend to the Diamond echelon.',
+  },
+  { 
+    id: 'diamond',
+    name: 'Diamond',
+    emoji: '💎',
+    tierTag: 'Tier IV Master',
+    minXp: 5000, 
+    maxXp: 999999, 
+    color: 'text-cyan-300', 
+    glowColor: 'shadow-cyan-500/40',
+    bg: 'bg-gradient-to-br from-cyan-400/30 via-sky-500/20 to-indigo-950/50', 
+    border: 'border-cyan-400/60 shadow-[0_0_35px_rgba(6,182,212,0.25)]',
+    badgeBg: 'bg-cyan-400/20 text-cyan-200 border-cyan-400/50',
+    iconBg: 'from-cyan-300 via-sky-400 to-indigo-600 text-white border-cyan-300',
+    pillColor: 'text-cyan-300',
+    avatarRing: 'ring-cyan-400/60 shadow-[0_0_12px_rgba(6,182,212,0.5)]',
+    rewards: '1,000 XP + Full 5 Hearts + Diamond Crown',
+    firstPrize: 1500,
+    description: 'The pinnacle of CodeQuest mastery. Elite champions receive supreme rewards.',
+  }
+];
+
+// Dynamic Badge Icon Renderer based on League ID
+export const renderLeagueBadgeIcon = (id: string, size = 20, className = '') => {
+  switch ((id || '').toLowerCase()) {
+    case 'diamond':
+      return <Gem size={size} className={`text-cyan-300 fill-cyan-400/20 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)] ${className}`} />;
+    case 'gold':
+      return <Crown size={size} className={`text-yellow-300 fill-yellow-400/20 drop-shadow-[0_0_8px_rgba(234,179,8,0.8)] ${className}`} />;
+    case 'silver':
+      return <Shield size={size} className={`text-slate-200 fill-slate-300/20 drop-shadow-[0_0_8px_rgba(226,232,240,0.6)] ${className}`} />;
+    case 'bronze':
+    default:
+      return <Award size={size} className={`text-amber-400 fill-amber-500/20 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)] ${className}`} />;
+  }
+};
+
+export default function LeaderboardTab() {
+  const { xp, weeklyXp, leagueId, rankChange, evaluateWeeklyLeagues, username } = useGameStore();
+  
+  // 1. Resolve user's explicit league tier from game store
+  const activeLeagueId = (leagueId || '').toLowerCase();
+  let calculatedLeagueIdx = LEAGUES.findIndex(l => l.id === activeLeagueId);
+  
+  // Fallback to XP range only if leagueId is unset or invalid
+  if (calculatedLeagueIdx === -1) {
+    calculatedLeagueIdx = LEAGUES.findIndex(l => xp >= l.minXp && xp <= l.maxXp);
+    if (calculatedLeagueIdx === -1) calculatedLeagueIdx = 0;
+  }
+
+  const userLeagueIdx = calculatedLeagueIdx;
+  const userLeagueMeta = LEAGUES[userLeagueIdx];
+
+  const [currentLeague, setCurrentLeague] = useState(userLeagueIdx); 
+  const [users, setUsers] = useState<LeaderboardUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evalResultToast, setEvalResultToast] = useState<string | null>(null);
+  const [rewardClaimed, setRewardClaimed] = useState<boolean>(() => {
+    return localStorage.getItem('codequest_weekly_reward_claimed') === 'true';
+  });
+
+  // Keep currentLeague view in sync whenever user's leagueId changes
+  useEffect(() => {
+    setCurrentLeague(userLeagueIdx);
+  }, [userLeagueIdx]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, [currentLeague]);
+
+  const fetchLeaderboard = async () => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+
+    const activeLeagueConfig = LEAGUES[currentLeague];
+
+    // Try fetching users matching the active league tier
+    const { data: leagueProfiles, error: leagueErr } = await supabase
+      .from('profiles')
+      .select('id, username, xp, weekly_xp, league_id, rank_change')
+      .eq('league_id', activeLeagueConfig.id)
+      .order('xp', { ascending: false })
+      .limit(30);
+
+    if (!leagueErr && leagueProfiles && leagueProfiles.length > 0) {
+      setUsers(leagueProfiles.map((u, i) => ({
+        ...u,
+        rank: i + 1,
+        change: (u.rank_change as any) || (Math.random() > 0.8 ? 'up' : Math.random() > 0.8 ? 'down' : 'none')
+      })));
+    } else {
+      // Fallback to top users across all profiles
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, xp, weekly_xp, league_id, rank_change')
+        .order('xp', { ascending: false })
+        .limit(30);
+
+      if (!error && data) {
+        setUsers(data.map((u, i) => ({
+          ...u,
+          rank: i + 1,
+          change: (u.rank_change as any) || (Math.random() > 0.8 ? 'up' : Math.random() > 0.8 ? 'down' : 'none')
+        })));
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleClaimReward = () => {
+    sounds.playFanfare();
+    setRewardClaimed(true);
+    localStorage.setItem('codequest_weekly_reward_claimed', 'true');
+    setEvalResultToast(`🎉 Claimed ${LEAGUES[userLeagueIdx].rewards}!`);
+    setTimeout(() => setEvalResultToast(null), 4000);
+  };
+
+  const handleTriggerWeeklyEvaluation = async () => {
+    setIsEvaluating(true);
+    try {
+      const res = await evaluateWeeklyLeagues();
+      setEvalResultToast(res.message);
+      await fetchLeaderboard();
+    } catch (e: any) {
+      setEvalResultToast(e.message || 'Weekly evaluation error');
+    } finally {
+      setIsEvaluating(false);
+      setTimeout(() => setEvalResultToast(null), 5000);
+    }
+  };
+
+  const activeLeague = LEAGUES[currentLeague];
+
+  return (
+    <div className="max-w-2xl lg:max-w-3xl mx-auto py-6 sm:py-8 px-2 sm:px-4 pb-28 text-left space-y-6 sm:space-y-7 animate-in fade-in duration-300">
+      {/* Toast Notification for Weekly Evaluation Results */}
+      {evalResultToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white text-xs font-black px-5 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 border border-white/20 animate-bounce max-w-md text-center">
+          <Sparkles size={16} className="text-yellow-300 fill-yellow-300 shrink-0" />
+          <span>{evalResultToast}</span>
+        </div>
+      )}
+
+      {/* User Current Tier Status Pill */}
+      <div className="flex items-center justify-between bg-[#14151C] border border-white/10 p-3.5 sm:p-4 rounded-2xl shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${userLeagueMeta.iconBg} border flex items-center justify-center shadow-md shrink-0`}>
+            {renderLeagueBadgeIcon(userLeagueMeta.id, 20)}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-white">{username || 'Developer'}</span>
+              <span className={`text-[10px] font-black uppercase px-2 py-0.2 rounded-full border ${userLeagueMeta.badgeBg}`}>
+                {userLeagueMeta.name} League
+              </span>
+            </div>
+            <p className="text-[11px] text-white/50">{userLeagueMeta.tierTag} · {userLeagueMeta.rewards}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {rankChange === 'up' && (
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full animate-pulse">
+              <TrendingUp size={12} />
+              <span>Promoted!</span>
+            </span>
+          )}
+          {rankChange === 'down' && (
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-full">
+              <TrendingDown size={12} />
+              <span>Demoted</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* League Selection Segmented Tabs with Unique Badges */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-white/5 border border-white/10 rounded-2xl">
+        {LEAGUES.map((league, idx) => {
+          const isMyLeague = idx === userLeagueIdx;
+          const isSelected = currentLeague === idx;
+          return (
+            <button
+              key={league.name}
+              onClick={() => setCurrentLeague(idx)}
+              className={`flex-1 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
+                isSelected 
+                  ? `bg-gradient-to-r from-white/15 to-white/10 text-white shadow-md border ${league.border}` 
+                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                {renderLeagueBadgeIcon(league.id, 14)}
+                <span className={isSelected ? league.color : ''}>{league.name}</span>
+              </div>
+              {isMyLeague && (
+                <span className={`text-[8px] font-black uppercase px-1.5 py-0.2 rounded-full border ${league.badgeBg}`}>
+                  You
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active League Hero Card */}
+      <div className={`rounded-3xl p-5 sm:p-7 border-2 ${activeLeague.bg} ${activeLeague.border} shadow-xl backdrop-blur-md relative overflow-hidden space-y-4`}>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {/* Dynamic League Badge Crest */}
+            <div className={`w-16 h-16 sm:w-18 sm:h-18 rounded-3xl bg-gradient-to-tr ${activeLeague.iconBg} border-2 flex items-center justify-center shadow-2xl shrink-0 group-hover:scale-105 transition-transform`}>
+              {renderLeagueBadgeIcon(activeLeague.id, 36)}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${activeLeague.badgeBg}`}>
+                  {activeLeague.tierTag}
+                </span>
+                {currentLeague === userLeagueIdx && (
+                  <span className="bg-sky-500/20 text-sky-300 border border-sky-400/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Sparkles size={11} />
+                    <span>Your Active League</span>
+                  </span>
+                )}
+              </div>
+
+              <h2 className={`text-2xl sm:text-3xl font-black uppercase tracking-tight mt-1 ${activeLeague.color}`}>
+                {activeLeague.name} League
+              </h2>
+
+              <div className="flex items-center gap-2 text-white/60 text-xs font-bold mt-1">
+                <Timer size={14} className="text-white/50" />
+                <span>Weekly Tournament closes Sunday 00:00 UTC</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center sm:flex-col gap-2 shrink-0">
+            <div className="text-left sm:text-right bg-black/30 border border-white/10 px-4 py-2.5 rounded-2xl">
+              <p className="text-[10px] font-black text-white/40 uppercase mb-0.5">Weekly XP</p>
+              <p className="text-lg sm:text-xl font-black text-yellow-300 tabular-nums">
+                {weeklyXp || 0} XP
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* League Tier Description & Rewards */}
+        <p className="text-white/70 text-xs sm:text-sm font-normal">
+          {activeLeague.description}
+        </p>
+
+        {/* League Rewards Description & Edge Function Trigger */}
+        <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-white/45 block mb-0.5">
+              Weekly Tournament Rewards ({activeLeague.name})
+            </span>
+            <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+              <Gift size={15} className="text-amber-400 shrink-0" />
+              <span>{activeLeague.rewards}</span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Run Weekly Evaluation Trigger */}
+            <button
+              onClick={handleTriggerWeeklyEvaluation}
+              disabled={isEvaluating}
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-[11px] uppercase tracking-wider transition-all flex items-center gap-1.5 border border-white/15 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+              title="Runs the Supabase Edge Function to evaluate promotions, demotions, and grant XP rewards"
+            >
+              <RefreshCw size={13} className={isEvaluating ? 'animate-spin' : ''} />
+              <span>{isEvaluating ? 'Evaluating...' : 'Evaluate Week'}</span>
+            </button>
+
+            {currentLeague === userLeagueIdx && (
+              <div>
+                {rewardClaimed ? (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-xs font-black uppercase">
+                    <CheckCircle2 size={14} />
+                    <span>Claimed</span>
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleClaimReward}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-amber-950 font-black text-xs uppercase tracking-wider transition-all shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95 animate-bounce"
+                  >
+                    <Gift size={15} />
+                    <span>Claim</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Promotion Zone Indicator */}
+      <div className="flex items-center gap-2 px-2">
+        <div className="flex-1 h-1 bg-emerald-500/30 rounded-full" />
+        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+          <TrendingUp size={13} />
+          <span>Promotion Zone (Top 10 Promote Up)</span>
+        </span>
+        <div className="flex-1 h-1 bg-emerald-500/30 rounded-full" />
+      </div>
+
+      {/* Leaderboard List */}
+      <div className="space-y-2.5">
+        {loading ? (
+          Array(5).fill(0).map((_, i) => (
+            <div key={i} className="h-16 bg-white/5 rounded-2xl animate-pulse" />
+          ))
+        ) : (
+          users.map((user) => {
+            const isFirst = user.rank === 1;
+            const isSecond = user.rank === 2;
+            const isThird = user.rank === 3;
+            const isMe = user.username === username || user.rank === 12;
+
+            return (
+              <div 
+                key={user.id} 
+                className={`
+                  flex items-center justify-between p-3.5 sm:p-4 rounded-2xl transition-all border
+                  ${isFirst ? 'bg-gradient-to-r from-yellow-500/20 via-amber-500/10 to-transparent border-yellow-500/40 shadow-[0_4px_16px_rgba(234,179,8,0.15)]' :
+                    isSecond ? 'bg-gradient-to-r from-slate-300/15 via-slate-400/10 to-transparent border-slate-300/30' :
+                    isThird ? 'bg-gradient-to-r from-amber-700/15 via-orange-800/10 to-transparent border-amber-600/30' :
+                    isMe ? `ring-2 ${activeLeague.avatarRing} bg-sky-500/10 border-sky-500/30` : 'bg-white/5 border-white/5 hover:bg-white/10'}
+                `}
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-7 text-center font-black text-sm sm:text-base shrink-0">
+                    {isFirst ? (
+                      <Crown size={22} className="text-yellow-400 fill-yellow-400 mx-auto" />
+                    ) : isSecond ? (
+                      <span className="text-slate-300 font-black">2</span>
+                    ) : isThird ? (
+                      <span className="text-amber-500 font-black">3</span>
+                    ) : (
+                      <span className="text-white/40">{user.rank}</span>
+                    )}
+                  </div>
+
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm shadow-md shrink-0 ${
+                    isFirst ? 'bg-gradient-to-tr from-yellow-400 to-amber-500 text-black border border-yellow-300' :
+                    isSecond ? 'bg-gradient-to-tr from-slate-300 to-slate-400 text-black border border-slate-200' :
+                    isThird ? 'bg-gradient-to-tr from-amber-600 to-orange-700 text-white border border-amber-500' :
+                    'bg-white/10 text-white/80 border border-white/10'
+                  }`}>
+                    {user.username?.[0]?.toUpperCase() || '?'}
+                  </div>
+
+                  <div className="truncate">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-white text-sm truncate">{user.username || 'Mysterious Dev'}</h4>
+                      {isMe && (
+                        <span className="text-[9px] bg-sky-500 text-white font-black px-2 py-0.2 rounded-full uppercase shrink-0">
+                          You
+                        </span>
+                      )}
+                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full border hidden sm:inline-flex items-center gap-1 shrink-0 ${activeLeague.badgeBg}`}>
+                        {renderLeagueBadgeIcon(activeLeague.id, 10)}
+                        <span>{activeLeague.name}</span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-black text-sky-400 uppercase tracking-wider tabular-nums mt-0.5">
+                      {user.xp} XP
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  {user.change === 'up' && (
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                      <TrendingUp size={14} />
+                      <span className="hidden sm:inline">Promoted</span>
+                    </span>
+                  )}
+                  {user.change === 'down' && (
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
+                      <TrendingDown size={14} />
+                      <span className="hidden sm:inline">Demoted</span>
+                    </span>
+                  )}
+                  {user.change === 'none' && <Minus size={16} className="text-white/20" />}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Demotion Zone Indicator */}
+      <div className="flex items-center gap-2 px-2 pt-2">
+        <div className="flex-1 h-1 bg-rose-500/30 rounded-full" />
+        <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider flex items-center gap-1">
+          <TrendingDown size={13} />
+          <span>Demotion Zone (Bottom 5 Demote Down)</span>
+        </span>
+        <div className="flex-1 h-1 bg-rose-500/30 rounded-full" />
+      </div>
+    </div>
+  );
+}
