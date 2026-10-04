@@ -3,7 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main  # Trigger build on push to the main branch
+      - main
+      - master  # Trigger build on push to either main or master branches
 
 permissions:
   contents: write  # Required for JamesIves deployment action to push to gh-pages branch
