@@ -7,6 +7,7 @@ import {
 import { useGameStore, PlanCycle, SubscriptionTier } from '../store/useGameStore';
 import { PATHS_METADATA } from '../data/learningPaths';
 import { supabase } from '../lib/supabase';
+import { safeInsertPaymentApproval } from '../lib/subscriptionDb';
 import { sounds } from '../lib/sound';
 
 interface SubscriptionModalProps {
@@ -48,10 +49,70 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
   // Payment options restricted to GCash and Maya only
   const [paymentMethod, setPaymentMethod] = useState<'gcash' | 'maya'>('gcash');
   const [refNumber, setRefNumber] = useState('');
+  const [proofImage, setProofImage] = useState('');
+  const [uploadingProof, setUploadingProof] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState<'plans' | 'checkout' | 'pending_approval' | 'success'>('plans');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelNotice, setCancelNotice] = useState<string | null>(null);
+
+  const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingProof(true);
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 600;
+          const MAX_HEIGHT = 600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+            setProofImage(compressedBase64);
+          } else {
+            setProofImage(uploadEvent.target?.result as string);
+          }
+        } catch (canvasErr) {
+          console.warn('Canvas compression failed, falling back to raw data:', canvasErr);
+          setProofImage(uploadEvent.target?.result as string);
+        }
+        setUploadingProof(false);
+        sounds.playCorrect();
+      };
+      img.onerror = () => {
+        setProofImage(uploadEvent.target?.result as string);
+        setUploadingProof(false);
+      };
+      img.src = uploadEvent.target?.result as string;
+    };
+    reader.onerror = () => {
+      setUploadingProof(false);
+      alert('Error reading file. Please try again.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // User payment requests for tracker
   const [userRequests, setUserRequests] = useState<any[]>([]);
@@ -218,6 +279,7 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
     }
     setSelectedTier(tier);
     setRefNumber('');
+    setProofImage('');
     setStep('checkout');
   };
 
@@ -231,38 +293,64 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
     setIsProcessing(true);
     sounds.playCorrect();
 
+    let insertError = null;
+
     if (supabase) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         
+        if (user) {
+          // Ensure user's profile row exists in the profiles table to avoid foreign key violations on payment_approvals
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (!existingProfile) {
+            await supabase.from('profiles').upsert([{
+              id: user.id,
+              username: username || 'CodeExplorer',
+              xp: 0,
+              weekly_xp: 0,
+              level: 1,
+              hearts: 5,
+              streak: 1,
+              league_id: 'bronze',
+              career_goal: 'Full-Stack Developer',
+              bio: 'CodeQuest student mastering software engineering.'
+            }]);
+          }
+        }
+
         const rate = selectedTier === 'pro' 
           ? (billingCycle === 'yearly' ? 99 : 199)
           : (billingCycle === 'yearly' ? 49 : 99);
         const calcAmount = billingCycle === 'yearly' ? rate * 12 : rate;
 
-        const { error } = await supabase
-          .from('payment_approvals')
-          .insert([{
-            user_id: user?.id || null,
-            username: username || 'CodeExplorer',
-            method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
-            reference_number: refNumber.trim(),
-            amount: calcAmount,
-            tier: selectedTier,
-            cycle: billingCycle,
-            status: 'pending',
-            proof_image: ''
-          }]);
+        const res = await safeInsertPaymentApproval({
+          user_id: user?.id || null,
+          username: username || 'CodeExplorer',
+          method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
+          reference_number: refNumber.trim(),
+          amount: calcAmount,
+          tier: selectedTier,
+          cycle: billingCycle,
+          status: 'pending',
+          proof_image: proofImage
+        });
 
-        if (error) {
-          console.warn('payment_approvals insert error:', error.message);
+        if (!res.success) {
+          insertError = res.error;
+          console.warn('payment_approvals insert error:', res.error);
         }
-      } catch (err) {
+      } catch (err: any) {
+        insertError = { message: err?.message || 'Network exception' };
         console.error('payment_approvals insert error:', err);
       }
     }
 
-    // Save locally as fallback
+    // Save locally as fallback so process always works and transitions smoothly
     const existing = JSON.parse(localStorage.getItem('codequest_pending_payments') || '[]');
     const newPayment = {
       id: `pay-${Date.now()}`,
@@ -272,7 +360,8 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
       method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
       refNumber: refNumber.trim(),
       timestamp: Date.now(),
-      status: 'pending'
+      status: 'pending',
+      proofImage: proofImage
     };
     localStorage.setItem('codequest_pending_payments', JSON.stringify([newPayment, ...existing]));
 
@@ -600,6 +689,35 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
                 <span className="text-[10px] text-white/40 block">
                   Admin will review this reference code for manual approval.
                 </span>
+              </div>
+
+              {/* Proof of Payment Image Upload */}
+              <div className="bg-white/[0.02] border border-white/10 p-4 rounded-xl space-y-3">
+                <label className="block text-[11px] font-bold uppercase text-white/60">
+                  Upload Payment Proof / Receipt Screenshot *
+                </label>
+                
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="w-24 h-24 bg-black/40 border border-white/10 rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-md">
+                    {proofImage ? (
+                      <img src={proofImage} alt="Payment Receipt" className="w-full h-full object-contain p-1" />
+                    ) : (
+                      <QrCode size={24} className="text-white/30" />
+                    )}
+                  </div>
+                  <div className="flex-1 w-full space-y-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      required
+                      onChange={handleProofUpload}
+                      className="text-xs text-white/60 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-white/10 file:text-white hover:file:bg-white/20 cursor-pointer w-full"
+                    />
+                    <p className="text-[10px] text-white/40 font-semibold text-amber-400">
+                      {uploadingProof ? '⌛ Processing image...' : '📸 Select payment confirmation receipt screenshot'}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Action Buttons */}

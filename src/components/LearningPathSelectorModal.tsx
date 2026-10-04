@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Check, ArrowRight, Sparkles, Trophy, BookOpen, Layers, Crown, Lock, Zap, Sliders } from 'lucide-react';
-import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser } from '../data/learningPaths';
+import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser, isPathAdvanceUnlockedForUser } from '../data/learningPaths';
 import { useGameStore } from '../store/useGameStore';
 import { sounds } from '../lib/sound';
 
@@ -143,6 +143,22 @@ export default function LearningPathSelectorModal({
                           <Check size={13} className="text-sky-400" />
                           <span>Active Track</span>
                         </div>
+                      ) : isStudentPlus && path.isAdvancedTrack && !isPathAdvanceUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds) ? (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const confirmMsg = `🎓 Switch StudentPlus Unlocked Track:\n\nWould you like to select "${path.title}" as your StudentPlus unlocked advance track?`;
+                            if (window.confirm(confirmMsg)) {
+                              await setStudentPlusAdvancedPath(path.id);
+                              handleTrackClick(path);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 text-xs font-black transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+                        >
+                          <Zap size={12} className="fill-emerald-400" />
+                          <span>Unlock Track</span>
+                        </button>
                       ) : isStudentPlus && (unlockedAdvancedPathId || 'web-dev') === path.id ? (
                         <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 px-2.5 py-1 rounded-full text-[11px] font-black flex items-center gap-1.5 shadow-sm shrink-0">
                           <Zap size={12} className="fill-emerald-400" />

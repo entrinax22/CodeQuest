@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
+import { safeFetchSubscription, safeUpsertSubscription } from '../lib/subscriptionDb';
 import { sounds } from '../lib/sound';
+import { getPathMeta } from '../data/learningPaths';
 
 // 12 minutes per heart -> 5 hearts = 60 minutes = 1 hour total refill time
 export const HEART_REFILL_INTERVAL_MS = 12 * 60 * 1000;
@@ -20,6 +22,18 @@ const getYesterdayDateStr = (): string => {
   const d = new Date();
   d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const safeParseArray = (val: any, fallback: string[] = []): string[] => {
+  if (!val) return fallback;
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return fallback;
 };
 
 interface GameState {
@@ -114,54 +128,134 @@ export const useGameStore = create<GameState>()(
       subscriptionPlanCycle: null,
       subscriptionExpiresAt: null,
       unlockedAdvancedPathId: 'web-dev',
-      unlockedAdvancedPathIds: ['web-dev'],
+      unlockedAdvancedPathIds: ['web-dev', 'python'],
       studentPlusRenewalCount: 0,
       studentPlusPathLocked: false,
       role: 'user',
 
-      setActivePath: (pathId: string) => {
+      setActivePath: async (pathId: string) => {
         set({ activePathId: pathId });
-      },
-
-      setStudentPlusAdvancedPath: async (pathId: string): Promise<boolean> => {
-        const { subscriptionTier, unlockedAdvancedPathIds, studentPlusRenewalCount } = get();
-        const maxAllowed = 1 + studentPlusRenewalCount;
-        const currentUnlocked = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 
-          ? unlockedAdvancedPathIds 
-          : [get().unlockedAdvancedPathId || 'web-dev'];
-
-        if (currentUnlocked.includes(pathId)) {
-          set({ unlockedAdvancedPathId: pathId });
-          sounds.playCorrect();
-          return true;
-        }
-
-        if (subscriptionTier === 'student_plus' && currentUnlocked.length >= maxAllowed) {
-          sounds.playWrong();
-          alert(`You have reached your limit of ${maxAllowed} advanced path(s) for StudentPlus. Renew your StudentPlus subscription to unlock +1 more path!`);
-          return false;
-        }
-
-        const newUnlocked = Array.from(new Set([...currentUnlocked, pathId]));
-        set({ 
-          unlockedAdvancedPathIds: newUnlocked, 
-          unlockedAdvancedPathId: pathId, 
-          studentPlusPathLocked: true 
-        });
-        sounds.playFanfare();
-
         if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await supabase.from('profiles').update({
-                unlocked_advanced_path_id: pathId,
-                unlocked_advanced_path_ids: newUnlocked,
-                student_plus_path_locked: true,
-              }).eq('id', user.id);
+              await supabase.from('profiles').update({ active_path_id: pathId }).eq('id', user.id);
             }
           } catch {}
         }
+      },
+
+      setStudentPlusAdvancedPath: async (pathId: string): Promise<boolean> => {
+        let liveTier: SubscriptionTier = get().subscriptionTier;
+        let liveRenewalCount = get().studentPlusRenewalCount;
+        let liveUnlockedPathIds = get().unlockedAdvancedPathIds || [];
+        let userId: string | null = null;
+
+        // 1. Fetch live profile and subscription directly from Supabase DB to verify current entitlement
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+
+              // Fetch latest profile row
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('subscription_tier, is_pro, student_plus_renewal_count, unlocked_advanced_path_ids, unlocked_advanced_path_id')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              // Fetch latest subscription row
+              const subRecord = await safeFetchSubscription(user.id);
+
+              if (subRecord && subRecord.tier) {
+                liveTier = subRecord.tier as SubscriptionTier;
+              } else if (profile?.subscription_tier) {
+                liveTier = profile.subscription_tier as SubscriptionTier;
+              } else if (profile?.is_pro) {
+                liveTier = 'pro';
+              }
+
+              if (profile) {
+                liveRenewalCount = profile.student_plus_renewal_count ?? liveRenewalCount;
+                const dbPaths = safeParseArray(profile.unlocked_advanced_path_ids, []);
+                liveUnlockedPathIds = Array.from(new Set(['web-dev', 'python', ...dbPaths]));
+              }
+            }
+          } catch (err) {
+            console.warn('Could not fetch live DB state for unlock validation:', err);
+          }
+        }
+
+        // 2. Strict Database Verification: Basic / free tier users CANNOT unlock advance paths
+        if (liveTier !== 'student_plus' && liveTier !== 'pro') {
+          console.warn('[Unlock Guard] User subscription tier in database is basic. Unlocking rejected.');
+          set({ subscriptionTier: 'basic', isPro: false });
+          return false;
+        }
+
+        // If PRO tier in DB, all advance tracks are unlocked
+        if (liveTier === 'pro') {
+          set({
+            subscriptionTier: 'pro',
+            isPro: true,
+            unlockedAdvancedPathId: pathId,
+            activePathId: pathId
+          });
+          sounds.playCorrect();
+          return true;
+        }
+
+        // 3. Compare DB unlocked paths with requested track for StudentPlus
+        const maxAllowed = 1 + liveRenewalCount;
+        const currentUnlockedAdvanced = liveUnlockedPathIds.filter(id => getPathMeta(id)?.isAdvancedTrack);
+
+        let newUnlocked: string[];
+        if (currentUnlockedAdvanced.includes(pathId)) {
+          newUnlocked = liveUnlockedPathIds;
+        } else if (currentUnlockedAdvanced.length < maxAllowed) {
+          // Permanent / Lifetime unlock this track by adding it to their array
+          newUnlocked = Array.from(new Set([...liveUnlockedPathIds, pathId]));
+        } else {
+          // Limit Reached: Previously unlocked paths are lifetime unlocked and cannot be swapped or locked again.
+          // To unlock another advanced path, they must renew their StudentPlus plan to increase slots!
+          alert(`🔒 Track Unlock Limit Reached:\n\nYou have already used your ${currentUnlockedAdvanced.length} available advanced path unlock(s).\n\nYour unlocked paths are lifetime unlocked for your account! To unlock "${getPathMeta(pathId)?.title || pathId}", please renew your StudentPlus subscription to get another advanced path unlock slot, or upgrade to CodeQuest PRO!`);
+          return false;
+        }
+
+        // 4. Update local state
+        set({
+          subscriptionTier: 'student_plus',
+          isPro: true,
+          unlockedAdvancedPathIds: newUnlocked,
+          unlockedAdvancedPathId: pathId,
+          studentPlusPathLocked: true
+        });
+        sounds.playFanfare();
+
+        // 5. Update database with new unlocked state
+        if (supabase && userId) {
+          try {
+            const { error: profileErr } = await supabase.from('profiles').update({
+              unlocked_advanced_path_id: pathId,
+              unlocked_advanced_path_ids: newUnlocked,
+              student_plus_path_locked: true,
+              subscription_tier: liveTier
+            }).eq('id', userId);
+
+            if (profileErr) {
+              console.warn('[Supabase Schema Notice] Could not update unlocked_advanced_path_id on profiles. Writing to subscriptions fallback.', profileErr.message);
+              await safeUpsertSubscription(userId, {
+                tier: liveTier,
+                is_pro: true,
+                username: get().username
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to persist unlocked advanced path:', err);
+          }
+        }
+
         return true;
       },
 
@@ -226,11 +320,11 @@ export const useGameStore = create<GameState>()(
         try {
           let { data, error } = await supabase
             .from('profiles')
-            .select('xp, hearts, streak, level, completed_lessons, username, league_id, weekly_xp, rank_change, is_pro, subscription_tier, subscription_expires_at, unlocked_advanced_path_id, student_plus_path_locked, role, career_goal, bio')
+            .select('*')
             .eq('id', userId)
             .single();
 
-          // Fallback if some columns have not yet been added to Supabase table
+          // Fallback if record query fails
           let profileRecord: any = data;
           if (error) {
             const fallback = await supabase
@@ -241,6 +335,9 @@ export const useGameStore = create<GameState>()(
             profileRecord = fallback.data ? { ...fallback.data, completed_lessons: [] } : null;
             error = fallback.error;
           }
+
+          // 2. Fetch from separated subscriptions table if it exists
+          const subscriptionRecord: any = await safeFetchSubscription(userId);
 
           if (!profileRecord) {
             // Initial row creation in Supabase for authenticated user if record doesn't exist yet
@@ -265,6 +362,10 @@ export const useGameStore = create<GameState>()(
             };
 
             await supabase.from('profiles').upsert([newProfilePayload]);
+
+            // Pre-populate default basic subscription entitlement in subscriptions table
+            await safeUpsertSubscription(userId, { tier: 'basic', is_pro: false, cycle: 'monthly' });
+
             set({ role: initialRole, isSyncing: false });
             return;
           }
@@ -290,20 +391,34 @@ export const useGameStore = create<GameState>()(
             const dbStreak = profileRecord.streak ?? 1;
             const resolvedStreak = Math.max(localStreak, dbStreak);
             
-            // Cloud database profile is the authoritative source of truth for subscription tier & role
-            const cloudTier = profileRecord.subscription_tier as SubscriptionTier | undefined;
-            const resolvedSubTier: SubscriptionTier = cloudTier || 'basic';
+            // Cloud database profile/subscriptions is the authoritative source of truth for subscription tier & role
+            const cloudTier = subscriptionRecord ? subscriptionRecord.tier : (profileRecord.subscription_tier as SubscriptionTier | undefined);
+            const resolvedSubTier: SubscriptionTier = (cloudTier as SubscriptionTier) || 'basic';
 
-            const resolvedIsPro = resolvedSubTier === 'student_plus' || resolvedSubTier === 'pro';
-            const resolvedExpiresAt = profileRecord.subscription_expires_at || null;
-            const resolvedAdvancedPath = profileRecord.unlocked_advanced_path_id || 'web-dev';
+            const resolvedIsPro = subscriptionRecord ? subscriptionRecord.is_pro : (resolvedSubTier === 'student_plus' || resolvedSubTier === 'pro' || profileRecord.is_pro);
+            const resolvedExpiresAt = subscriptionRecord ? subscriptionRecord.expires_at : (profileRecord.subscription_expires_at || null);
+            const resolvedCycle = subscriptionRecord ? subscriptionRecord.cycle : (profileRecord.subscription_plan_cycle || null);
+
+            const resolvedAdvancedPath = profileRecord.unlocked_advanced_path_id || get().unlockedAdvancedPathId || 'web-dev';
             const resolvedPathLocked = profileRecord.student_plus_path_locked !== undefined 
               ? Boolean(profileRecord.student_plus_path_locked) 
               : (resolvedAdvancedPath !== 'web-dev');
 
+            const resolvedActivePath = profileRecord.active_path_id || get().activePathId || 'web-dev';
+            const resolvedStreakFreezes = profileRecord.streak_freezes_count ?? get().streakFreezesCount ?? 0;
+            const resolvedDoubleXpUntil = profileRecord.double_xp_until ?? get().doubleXpUntil ?? null;
+            const parsedDbUnlockedPaths = safeParseArray(profileRecord.unlocked_advanced_path_ids, []);
+            const resolvedUnlockedAdvancedPathIds = Array.from(new Set([
+              'web-dev',
+              'python',
+              ...parsedDbUnlockedPaths
+            ]));
+            const resolvedStudentPlusRenewalCount = profileRecord.student_plus_renewal_count ?? get().studentPlusRenewalCount ?? 0;
+            const resolvedAvatarIcon = profileRecord.avatar_icon || profileRecord.avatar || get().avatarIcon || '👾';
+
             // Compute hearts & timer
             let currentHearts = resolvedIsPro ? MAX_HEARTS : Math.max(0, Math.min(MAX_HEARTS, profileRecord.hearts ?? get().hearts ?? MAX_HEARTS));
-            let currentLostAt = get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null;
+            let currentLostAt = profileRecord.last_heart_lost_at ? Number(profileRecord.last_heart_lost_at) : (get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null);
 
             if (resolvedIsPro) {
               currentHearts = MAX_HEARTS;
@@ -323,9 +438,9 @@ export const useGameStore = create<GameState>()(
 
             const resolvedHearts = currentHearts;
             const resolvedLastLostAt = currentLostAt;
-            const resolvedUsername = profileRecord.username || 'CodeExplorer';
-            const resolvedCareerGoal = profileRecord.career_goal || 'Full-Stack Developer';
-            const resolvedBio = profileRecord.bio || 'Leveling up my software engineering skills on CodeQuest Academy.';
+            const resolvedUsername = profileRecord.username || get().username || 'CodeExplorer';
+            const resolvedCareerGoal = profileRecord.career_goal || get().careerGoal || 'Full-Stack Developer';
+            const resolvedBio = profileRecord.bio || get().bio || 'Leveling up my software engineering skills on CodeQuest Academy.';
 
             const { data: authData } = await supabase.auth.getUser();
             const email = authData?.user?.email;
@@ -343,35 +458,75 @@ export const useGameStore = create<GameState>()(
               completedLessons: resolvedCompleted,
               lastHeartLostAt: resolvedLastLostAt,
               username: resolvedUsername,
+              avatarIcon: resolvedAvatarIcon,
               careerGoal: resolvedCareerGoal,
               bio: resolvedBio,
               isPro: resolvedIsPro,
               subscriptionTier: resolvedSubTier,
               subscriptionExpiresAt: resolvedExpiresAt,
+              subscriptionPlanCycle: resolvedCycle,
               unlockedAdvancedPathId: resolvedAdvancedPath,
+              unlockedAdvancedPathIds: resolvedUnlockedAdvancedPathIds,
+              studentPlusRenewalCount: resolvedStudentPlusRenewalCount,
               studentPlusPathLocked: resolvedPathLocked,
+              activePathId: resolvedActivePath,
+              streakFreezesCount: resolvedStreakFreezes,
+              doubleXpUntil: resolvedDoubleXpUntil,
               role: resolvedRole,
               isSyncing: false 
             });
 
             // Sync merged authoritative state back to Supabase via upsert
             try {
-              await supabase.from('profiles').upsert([{
+              // 1. Update separate subscriptions table if it exists
+              await safeUpsertSubscription(userId, {
+                tier: resolvedSubTier,
+                is_pro: resolvedIsPro,
+                expires_at: resolvedExpiresAt,
+                cycle: resolvedCycle || 'monthly'
+              });
+
+              // 2. Update profiles table with full fields or fallback to core fields
+              const fullProfilePayload = {
                 id: userId,
                 username: resolvedUsername,
+                avatar_icon: resolvedAvatarIcon,
                 xp: resolvedXp,
                 weekly_xp: resolvedWeeklyXp,
                 league_id: resolvedLeague,
                 level: resolvedLevel,
                 completed_lessons: resolvedCompleted,
                 hearts: resolvedHearts,
+                last_heart_lost_at: resolvedLastLostAt,
                 streak: resolvedStreak,
                 is_pro: resolvedIsPro,
                 subscription_tier: resolvedSubTier,
                 role: resolvedRole,
                 career_goal: resolvedCareerGoal,
-                bio: resolvedBio
-              }]);
+                bio: resolvedBio,
+                active_path_id: resolvedActivePath,
+                streak_freezes_count: resolvedStreakFreezes,
+                double_xp_until: resolvedDoubleXpUntil,
+                student_plus_renewal_count: resolvedStudentPlusRenewalCount,
+                unlocked_advanced_path_id: resolvedAdvancedPath,
+                unlocked_advanced_path_ids: resolvedUnlockedAdvancedPathIds
+              };
+
+              const { error: upsertErr } = await supabase.from('profiles').upsert([fullProfilePayload]);
+              if (upsertErr) {
+                // Fallback to core columns existing on user DB table
+                await supabase.from('profiles').update({
+                  xp: resolvedXp,
+                  weekly_xp: resolvedWeeklyXp,
+                  level: resolvedLevel,
+                  completed_lessons: resolvedCompleted,
+                  hearts: resolvedHearts,
+                  streak: resolvedStreak,
+                  username: resolvedUsername,
+                  bio: resolvedBio,
+                  career_goal: resolvedCareerGoal
+                }).eq('id', userId);
+              }
             } catch {
               // Ignore background update errors
             }
@@ -383,43 +538,87 @@ export const useGameStore = create<GameState>()(
         }
       },
 
-      addXp: async (amount) => {
-        const tier = get().subscriptionTier;
-        const multiplier = tier === 'pro' 
-          ? 2 
-          : tier === 'student_plus' 
-          ? 1.5 
-          : (get().doubleXpUntil && get().doubleXpUntil! > Date.now() ? 2 : 1);
-        const grantedAmount = Math.round(amount * multiplier);
-
-        const newXp = get().xp + grantedAmount;
-        const newWeeklyXp = (get().weeklyXp || 0) + grantedAmount;
-        const newLevel = Math.floor(newXp / 1000) + 1;
-        set({ xp: newXp, weeklyXp: newWeeklyXp, level: newLevel });
+      addXp: async (amount: number) => {
+        let currentXp = get().xp;
+        let currentWeeklyXp = get().weeklyXp || 0;
+        let currentTier = get().subscriptionTier;
+        let currentDoubleXp = get().doubleXpUntil;
+        let userId: string | null = null;
 
         if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await supabase.from('profiles').update({ 
-                xp: newXp, 
-                weekly_xp: newWeeklyXp, 
-                level: newLevel 
-              }).eq('id', user.id);
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('xp, weekly_xp, subscription_tier, double_xp_until')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentXp = Math.max(profile.xp ?? 0, currentXp);
+                currentWeeklyXp = Math.max(profile.weekly_xp ?? 0, currentWeeklyXp);
+                if (profile.subscription_tier) currentTier = profile.subscription_tier as SubscriptionTier;
+                if (profile.double_xp_until) currentDoubleXp = profile.double_xp_until;
+              }
             }
-          } catch {
-            // Ignore offline/unconfigured updates
-          }
+          } catch {}
+        }
+
+        const multiplier = currentTier === 'pro' 
+          ? 2 
+          : currentTier === 'student_plus' 
+          ? 1.5 
+          : (currentDoubleXp && currentDoubleXp > Date.now() ? 2 : 1);
+        const grantedAmount = Math.round(amount * multiplier);
+
+        const newXp = currentXp + grantedAmount;
+        const newWeeklyXp = currentWeeklyXp + grantedAmount;
+        const newLevel = Math.floor(newXp / 1000) + 1;
+
+        set({ xp: newXp, weeklyXp: newWeeklyXp, level: newLevel });
+
+        if (supabase && userId) {
+          try {
+            await supabase.from('profiles').update({ 
+              xp: newXp, 
+              weekly_xp: newWeeklyXp, 
+              level: newLevel 
+            }).eq('id', userId);
+          } catch {}
         }
       },
 
       loseHeart: async () => {
-        // StudentPlus and Pro members have Infinite Hearts!
-        if (get().isPro) {
+        let currentHearts = get().hearts;
+        let isUserPro = get().isPro;
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('hearts, is_pro, subscription_tier')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentHearts = profile.hearts ?? currentHearts;
+                isUserPro = profile.is_pro || profile.subscription_tier === 'pro' || profile.subscription_tier === 'student_plus';
+              }
+            }
+          } catch {}
+        }
+
+        if (isUserPro) {
+          set({ hearts: MAX_HEARTS, lastHeartLostAt: null });
           return;
         }
 
-        const currentHearts = get().hearts;
         const newHearts = Math.max(0, currentHearts - 1);
         const now = Date.now();
         const existingLostAt = get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null;
@@ -430,43 +629,61 @@ export const useGameStore = create<GameState>()(
           lastHeartLostAt: newHearts < MAX_HEARTS ? newLastHeartLostAt : null 
         });
 
-        if (supabase) {
+        if (supabase && userId) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('profiles').update({ hearts: newHearts }).eq('id', user.id);
-            }
-          } catch {
-            // Ignore offline/unconfigured updates
-          }
+            await supabase.from('profiles').update({ 
+              hearts: newHearts,
+              last_heart_lost_at: newHearts < MAX_HEARTS ? newLastHeartLostAt : null
+            }).eq('id', userId);
+          } catch {}
         }
       },
 
       earnHeart: async () => {
-        if (get().isPro) {
-          set({ hearts: MAX_HEARTS, lastHeartLostAt: null });
-          return;
-        }
-
-        const currentHearts = get().hearts;
-        if (currentHearts >= MAX_HEARTS) return;
-
-        const newHearts = Math.min(MAX_HEARTS, currentHearts + 1);
-        const existingLostAt = get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null;
-        set({ 
-          hearts: newHearts, 
-          lastHeartLostAt: newHearts >= MAX_HEARTS ? null : (existingLostAt || Date.now())
-        });
+        let currentHearts = get().hearts;
+        let isUserPro = get().isPro;
+        let userId: string | null = null;
 
         if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await supabase.from('profiles').update({ hearts: newHearts }).eq('id', user.id);
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('hearts, is_pro, subscription_tier')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentHearts = profile.hearts ?? currentHearts;
+                isUserPro = profile.is_pro || profile.subscription_tier === 'pro' || profile.subscription_tier === 'student_plus';
+              }
             }
-          } catch {
-            // Ignore offline updates
-          }
+          } catch {}
+        }
+
+        if (isUserPro || currentHearts >= MAX_HEARTS) {
+          if (isUserPro) set({ hearts: MAX_HEARTS, lastHeartLostAt: null });
+          return;
+        }
+
+        const newHearts = Math.min(MAX_HEARTS, currentHearts + 1);
+        const existingLostAt = get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null;
+        const nextLostAt = newHearts >= MAX_HEARTS ? null : (existingLostAt || Date.now());
+
+        set({ 
+          hearts: newHearts, 
+          lastHeartLostAt: nextLostAt
+        });
+
+        if (supabase && userId) {
+          try {
+            await supabase.from('profiles').update({ 
+              hearts: newHearts,
+              last_heart_lost_at: nextLostAt
+            }).eq('id', userId);
+          } catch {}
         }
       },
 
@@ -476,37 +693,59 @@ export const useGameStore = create<GameState>()(
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await supabase.from('profiles').update({ hearts: MAX_HEARTS }).eq('id', user.id);
+              await supabase.from('profiles').update({ hearts: MAX_HEARTS, last_heart_lost_at: null }).eq('id', user.id);
             }
           } catch {}
         }
       },
 
       completeLesson: async (lessonId: string) => {
-        const { completedLessons, streak, lastStreakDate, streakFreezesCount, addXp } = get();
+        let currentCompleted = get().completedLessons || [];
+        let currentStreak = get().streak || 1;
+        let currentStreakDate = get().lastStreakDate;
+        let currentFreezes = get().streakFreezesCount || 0;
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('completed_lessons, streak, streak_freezes_count')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                const dbCompleted = Array.isArray(profile.completed_lessons) ? profile.completed_lessons : [];
+                currentCompleted = Array.from(new Set([...currentCompleted, ...dbCompleted]));
+                currentStreak = Math.max(profile.streak ?? 1, currentStreak);
+                currentFreezes = profile.streak_freezes_count ?? currentFreezes;
+              }
+            }
+          } catch {}
+        }
 
         const today = getTodayDateStr();
         const yesterday = getYesterdayDateStr();
 
-        let newStreak = streak;
-        let newFreezes = streakFreezesCount;
-        let newStreakDate = lastStreakDate;
+        let newStreak = currentStreak;
+        let newFreezes = currentFreezes;
+        let newStreakDate = currentStreakDate;
 
-        if (!lastStreakDate) {
-          newStreak = Math.max(1, streak);
+        if (!currentStreakDate) {
+          newStreak = Math.max(1, currentStreak);
           newStreakDate = today;
-        } else if (lastStreakDate === today) {
-          // Already completed a lesson today; streak maintained!
+        } else if (currentStreakDate === today) {
           newStreakDate = today;
-        } else if (lastStreakDate === yesterday) {
-          // Day-to-day continuous streak
-          newStreak = streak + 1;
+        } else if (currentStreakDate === yesterday) {
+          newStreak = currentStreak + 1;
           newStreakDate = today;
         } else {
-          // Missed 1 or more days
-          if (streakFreezesCount > 0) {
-            newFreezes = streakFreezesCount - 1;
-            newStreak = streak + 1;
+          if (currentFreezes > 0) {
+            newFreezes = currentFreezes - 1;
+            newStreak = currentStreak + 1;
             newStreakDate = today;
           } else {
             newStreak = 1;
@@ -514,8 +753,8 @@ export const useGameStore = create<GameState>()(
           }
         }
 
-        const isNewCompletion = !completedLessons.includes(lessonId);
-        const newCompleted = isNewCompletion ? [...completedLessons, lessonId] : completedLessons;
+        const isNewCompletion = !currentCompleted.includes(lessonId);
+        const newCompleted = isNewCompletion ? [...currentCompleted, lessonId] : currentCompleted;
 
         set({ 
           completedLessons: newCompleted,
@@ -524,36 +763,28 @@ export const useGameStore = create<GameState>()(
           streakFreezesCount: newFreezes
         });
         
-        await addXp(isNewCompletion ? 100 : 25);
+        await get().addXp(isNewCompletion ? 100 : 25);
 
-        if (supabase) {
+        if (supabase && userId) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('profiles').upsert([{
-                id: user.id,
-                username: get().username || 'CodeExplorer',
-                completed_lessons: newCompleted,
-                streak: newStreak,
-                xp: get().xp,
-                weekly_xp: get().weeklyXp,
-                level: get().level
-              }]);
+            await supabase.from('profiles').update({
+              completed_lessons: newCompleted,
+              streak: newStreak,
+              xp: get().xp,
+              weekly_xp: get().weeklyXp,
+              level: get().level,
+              streak_freezes_count: newFreezes
+            }).eq('id', userId);
 
-              try {
-                await supabase.from('user_lesson_completions').upsert([{
-                  user_id: user.id,
-                  lesson_id: lessonId,
-                  path_id: get().activePathId || 'web-dev',
-                  xp_earned: isNewCompletion ? 100 : 25
-                }], { onConflict: 'user_id,lesson_id' });
-              } catch {
-                // Optional granular log fallback
-              }
-            }
-          } catch {
-            // Ignore offline sync errors
-          }
+            try {
+              await supabase.from('user_lesson_completions').upsert([{
+                user_id: userId,
+                lesson_id: lessonId,
+                path_id: get().activePathId || 'web-dev',
+                xp_earned: isNewCompletion ? 100 : 25
+              }], { onConflict: 'user_id,lesson_id' });
+            } catch {}
+          } catch {}
         }
       },
 
@@ -562,10 +793,32 @@ export const useGameStore = create<GameState>()(
       },
 
       buyHeartRefill: async () => {
-        const { xp, hearts } = get();
-        if (hearts >= MAX_HEARTS) return false;
-        if (xp >= 150) {
-          const newXp = xp - 150;
+        let currentXp = get().xp;
+        let currentHearts = get().hearts;
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('xp, hearts')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentXp = profile.xp ?? currentXp;
+                currentHearts = profile.hearts ?? currentHearts;
+              }
+            }
+          } catch {}
+        }
+
+        if (currentHearts >= MAX_HEARTS) return false;
+        if (currentXp >= 150) {
+          const newXp = currentXp - 150;
           set({ 
             xp: newXp, 
             hearts: MAX_HEARTS, 
@@ -573,12 +826,13 @@ export const useGameStore = create<GameState>()(
           });
           sounds.playCorrect();
 
-          if (supabase) {
+          if (supabase && userId) {
             try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase.from('profiles').update({ xp: newXp, hearts: MAX_HEARTS }).eq('id', user.id);
-              }
+              await supabase.from('profiles').update({ 
+                xp: newXp, 
+                hearts: MAX_HEARTS, 
+                last_heart_lost_at: null 
+              }).eq('id', userId);
             } catch {}
           }
           return true;
@@ -587,20 +841,42 @@ export const useGameStore = create<GameState>()(
       },
 
       buyStreakFreeze: async () => {
-        const { xp, streakFreezesCount } = get();
-        if (streakFreezesCount >= 2) return false;
-        if (xp >= 200) {
-          const newXp = xp - 200;
-          const newCount = streakFreezesCount + 1;
+        let currentXp = get().xp;
+        let currentFreezes = get().streakFreezesCount || 0;
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('xp, streak_freezes_count')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentXp = profile.xp ?? currentXp;
+                currentFreezes = profile.streak_freezes_count ?? currentFreezes;
+              }
+            }
+          } catch {}
+        }
+
+        if (currentFreezes >= 2) return false;
+        if (currentXp >= 200) {
+          const newXp = currentXp - 200;
+          const newCount = currentFreezes + 1;
           set({ xp: newXp, streakFreezesCount: newCount });
           sounds.playCorrect();
 
-          if (supabase) {
+          if (supabase && userId) {
             try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase.from('profiles').update({ xp: newXp }).eq('id', user.id);
-              }
+              await supabase.from('profiles').update({ 
+                xp: newXp, 
+                streak_freezes_count: newCount 
+              }).eq('id', userId);
             } catch {}
           }
           return true;
@@ -609,20 +885,39 @@ export const useGameStore = create<GameState>()(
       },
 
       buyDoubleXpBoost: async () => {
-        const { xp } = get();
-        if (xp >= 250) {
-          const newXp = xp - 250;
-          // 30 minutes boost = 30 * 60 * 1000 ms
+        let currentXp = get().xp;
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('xp')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentXp = profile.xp ?? currentXp;
+              }
+            }
+          } catch {}
+        }
+
+        if (currentXp >= 250) {
+          const newXp = currentXp - 250;
           const expiry = Date.now() + 30 * 60 * 1000;
           set({ xp: newXp, doubleXpUntil: expiry });
           sounds.playFanfare();
 
-          if (supabase) {
+          if (supabase && userId) {
             try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase.from('profiles').update({ xp: newXp }).eq('id', user.id);
-              }
+              await supabase.from('profiles').update({ 
+                xp: newXp, 
+                double_xp_until: expiry 
+              }).eq('id', userId);
             } catch {}
           }
           return true;
@@ -632,13 +927,33 @@ export const useGameStore = create<GameState>()(
 
       // SaaS Pro Upgrade Handler
       upgradeToPro: async (tier: SubscriptionTier, planCycle: PlanCycle = 'yearly') => {
-        const expiryDate = new Date(Date.now() + (planCycle === 'monthly' ? 30 : 365) * 24 * 60 * 60 * 1000).toISOString();
+        let currentRenewalCount = get().studentPlusRenewalCount;
+        let userId: string | null = null;
 
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('student_plus_renewal_count')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                currentRenewalCount = profile.student_plus_renewal_count ?? currentRenewalCount;
+              }
+            }
+          } catch {}
+        }
+
+        const expiryDate = new Date(Date.now() + (planCycle === 'monthly' ? 30 : 365) * 24 * 60 * 60 * 1000).toISOString();
         const isPaid = tier === 'student_plus' || tier === 'pro';
         const freezesToGrant = tier === 'pro' ? 4 : tier === 'student_plus' ? 2 : 0;
         
-        const isStudentPlusRenewal = tier === 'student_plus';
-        const newRenewalCount = isStudentPlusRenewal ? get().studentPlusRenewalCount + 1 : get().studentPlusRenewalCount;
+        const isStudentPlusRenewal = tier === 'student_plus' && get().subscriptionTier === 'student_plus';
+        const newRenewalCount = isStudentPlusRenewal ? currentRenewalCount + 1 : (tier === 'student_plus' ? 0 : currentRenewalCount);
 
         set({
           isPro: isPaid,
@@ -653,24 +968,39 @@ export const useGameStore = create<GameState>()(
 
         sounds.playFanfare();
 
-        if (supabase) {
+        if (supabase && userId) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('profiles').update({
-                is_pro: isPaid,
-                subscription_tier: tier,
-                subscription_expires_at: expiryDate,
-                hearts: MAX_HEARTS,
-                student_plus_renewal_count: newRenewalCount,
-              }).eq('id', user.id);
-            }
+            await safeUpsertSubscription(userId, {
+              tier: tier,
+              is_pro: isPaid,
+              cycle: planCycle,
+              expires_at: expiryDate
+            });
+
+            await supabase.from('profiles').update({
+              is_pro: isPaid,
+              subscription_tier: tier,
+              subscription_expires_at: expiryDate,
+              hearts: MAX_HEARTS,
+              student_plus_renewal_count: newRenewalCount,
+            }).eq('id', userId);
           } catch {}
         }
       },
 
       // Cancel Subscription Handler
       cancelSubscription: async () => {
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+            }
+          } catch {}
+        }
+
         set({
           isPro: false,
           subscriptionTier: 'basic',
@@ -683,39 +1013,63 @@ export const useGameStore = create<GameState>()(
 
         sounds.playWrong();
 
-        if (supabase) {
+        if (supabase && userId) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase.from('profiles').update({
-                is_pro: false,
-                subscription_tier: 'basic',
-                subscription_expires_at: null,
-                unlocked_advanced_path_id: 'web-dev',
-                unlocked_advanced_path_ids: ['web-dev'],
-                student_plus_renewal_count: 0,
-              }).eq('id', user.id);
-            }
+            await safeUpsertSubscription(userId, {
+              tier: 'basic',
+              is_pro: false,
+              cycle: 'monthly',
+              expires_at: null
+            });
+
+            await supabase.from('profiles').update({
+              is_pro: false,
+              subscription_tier: 'basic',
+              subscription_expires_at: null,
+              unlocked_advanced_path_id: 'web-dev',
+              unlocked_advanced_path_ids: ['web-dev', 'python'],
+              student_plus_renewal_count: 0,
+            }).eq('id', userId);
           } catch {}
         }
       },
 
       updateProfile: async (newUsername: string, newAvatar?: string, newCareerGoal?: string, newBio?: string) => {
+        let userId: string | null = null;
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              userId = user.id;
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('username, avatar_icon, career_goal, bio')
+                .eq('id', user.id)
+                .maybeSingle();
+
+              if (profile) {
+                if (profile.username === newUsername && profile.avatar_icon === newAvatar && profile.career_goal === newCareerGoal && profile.bio === newBio) {
+                  return; // No changes needed
+                }
+              }
+            }
+          } catch {}
+        }
+
         const updates: Partial<GameState> = { username: newUsername };
         if (newAvatar) updates.avatarIcon = newAvatar;
         if (newCareerGoal !== undefined) updates.careerGoal = newCareerGoal;
         if (newBio !== undefined) updates.bio = newBio;
         set(updates);
 
-        if (supabase) {
+        if (supabase && userId) {
           try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              const payload: any = { username: newUsername };
-              if (newCareerGoal !== undefined) payload.career_goal = newCareerGoal;
-              if (newBio !== undefined) payload.bio = newBio;
-              await supabase.from('profiles').update(payload).eq('id', user.id);
-            }
+            const payload: any = { username: newUsername };
+            if (newAvatar) payload.avatar_icon = newAvatar;
+            if (newCareerGoal !== undefined) payload.career_goal = newCareerGoal;
+            if (newBio !== undefined) payload.bio = newBio;
+            await supabase.from('profiles').update(payload).eq('id', userId);
           } catch {}
         }
       },

@@ -211,14 +211,29 @@ export default function LeaderboardTab() {
     setLoading(false);
   };
 
-  const handleClaimReward = () => {
+  const handleClaimReward = async () => {
     sounds.playFanfare();
     setRewardClaimed(true);
     if (username) {
       localStorage.setItem(`codequest_weekly_reward_claimed_${username}`, 'true');
     }
-    setEvalResultToast(`Claimed ${LEAGUES[userLeagueIdx].name} Rewards! 🎉`);
-    setTimeout(() => setEvalResultToast(null), 3000);
+
+    // Dynamic XP and Heart Refill Disbursement based on user's active league
+    let rewardXp = 100;
+    if (activeLeagueId === 'silver') rewardXp = 250;
+    else if (activeLeagueId === 'gold') rewardXp = 500;
+    else if (activeLeagueId === 'diamond') rewardXp = 1000;
+
+    const store = useGameStore.getState();
+    try {
+      await store.addXp(rewardXp);
+      await store.refillHearts();
+    } catch (err) {
+      console.error('Error claiming rewards:', err);
+    }
+
+    setEvalResultToast(`Claimed ${activeLeague.name} Rewards (+${rewardXp} XP & Hearts Refilled)! 🎉`);
+    setTimeout(() => setEvalResultToast(null), 4000);
   };
 
   const handleTriggerWeeklyEvaluation = async () => {
@@ -262,31 +277,31 @@ export default function LeaderboardTab() {
         )}
 
       {/* User Current Tier Status Pill */}
-      <div className="flex items-center justify-between bg-[#14151C] border border-white/10 p-3.5 sm:p-4 rounded-2xl shadow-lg">
+      <div className="flex items-center justify-between bg-white border border-slate-200 p-3.5 sm:p-4 rounded-2xl shadow-sm">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${userLeagueMeta.iconBg} border flex items-center justify-center shadow-md shrink-0`}>
+          <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${userLeagueMeta.iconBg} border flex items-center justify-center shadow-sm shrink-0`}>
             {renderLeagueBadgeIcon(userLeagueMeta.id, 20)}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-white">{username || 'Developer'}</span>
+              <span className="text-xs font-black text-slate-900">{username || 'Developer'}</span>
               <span className={`text-[10px] font-black uppercase px-2 py-0.2 rounded-full border ${userLeagueMeta.badgeBg}`}>
                 {userLeagueMeta.name} League
               </span>
             </div>
-            <p className="text-[11px] text-white/50">{userLeagueMeta.tierTag} · {userLeagueMeta.rewards}</p>
+            <p className="text-[11px] text-slate-500">{userLeagueMeta.tierTag} · {userLeagueMeta.rewards}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {rankChange === 'up' && (
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full animate-pulse">
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-600 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-full animate-pulse">
               <TrendingUp size={12} />
               <span>Promoted!</span>
             </span>
           )}
           {rankChange === 'down' && (
-            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-black uppercase text-rose-600 bg-rose-100 border border-rose-300 px-2.5 py-1 rounded-full">
               <TrendingDown size={12} />
               <span>Demoted</span>
             </span>
@@ -295,7 +310,7 @@ export default function LeaderboardTab() {
       </div>
 
       {/* League Selection Segmented Tabs with Unique Badges */}
-      <div className="flex items-center gap-1.5 p-1.5 bg-white/5 border border-white/10 rounded-2xl">
+      <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 border border-slate-200 rounded-2xl">
         {LEAGUES.map((league, idx) => {
           const isMyLeague = idx === userLeagueIdx;
           const isSelected = currentLeague === idx;
@@ -305,13 +320,13 @@ export default function LeaderboardTab() {
               onClick={() => setCurrentLeague(idx)}
               className={`flex-1 py-2 sm:py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
                 isSelected 
-                  ? `bg-gradient-to-r from-white/15 to-white/10 text-white shadow-md border ${league.border}` 
-                  : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                  ? `bg-white text-slate-900 shadow-sm border border-slate-200` 
+                  : 'text-slate-400 hover:text-slate-800 hover:bg-white/50'
               }`}
             >
               <div className="flex items-center gap-1.5">
                 {renderLeagueBadgeIcon(league.id, 14)}
-                <span className={isSelected ? league.color : ''}>{league.name}</span>
+                <span className={isSelected ? 'text-slate-900 font-extrabold' : ''}>{league.name}</span>
               </div>
               {isMyLeague && (
                 <span className={`text-[8px] font-black uppercase px-1.5 py-0.2 rounded-full border ${league.badgeBg}`}>
@@ -324,13 +339,13 @@ export default function LeaderboardTab() {
       </div>
 
       {/* Active League Hero Card */}
-      <div className={`rounded-3xl p-5 sm:p-7 border-2 ${activeLeague.bg} ${activeLeague.border} shadow-xl backdrop-blur-md relative overflow-hidden space-y-4`}>
+      <div className="rounded-3xl p-5 sm:p-7 bg-[#0F172A] border border-slate-800 shadow-md relative overflow-hidden space-y-4 text-white">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {/* Dynamic League Badge Crest */}
-            <div className={`w-16 h-16 sm:w-18 sm:h-18 rounded-3xl bg-gradient-to-tr ${activeLeague.iconBg} border-2 flex items-center justify-center shadow-2xl shrink-0 group-hover:scale-105 transition-transform`}>
+            <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-tr ${activeLeague.iconBg} border border-slate-700 flex items-center justify-center shadow-lg shrink-0 group-hover:scale-105 transition-transform`}>
               {renderLeagueBadgeIcon(activeLeague.id, 36)}
             </div>
 
@@ -347,7 +362,7 @@ export default function LeaderboardTab() {
                 )}
               </div>
 
-              <h2 className={`text-2xl sm:text-3xl font-black uppercase tracking-tight mt-1 ${activeLeague.color}`}>
+              <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight mt-1 text-white">
                 {activeLeague.name} League
               </h2>
 
@@ -359,7 +374,7 @@ export default function LeaderboardTab() {
           </div>
           
           <div className="flex items-center sm:flex-col gap-2 shrink-0">
-            <div className="text-left sm:text-right bg-black/30 border border-white/10 px-4 py-2.5 rounded-2xl">
+            <div className="text-left sm:text-right bg-slate-800/80 border border-slate-700 px-4 py-2.5 rounded-2xl">
               <p className="text-[10px] font-black text-white/40 uppercase mb-0.5">Weekly XP</p>
               <p className="text-lg sm:text-xl font-black text-yellow-300 tabular-nums">
                 {weeklyXp || 0} XP
@@ -369,14 +384,14 @@ export default function LeaderboardTab() {
         </div>
 
         {/* League Tier Description & Rewards */}
-        <p className="text-white/70 text-xs sm:text-sm font-normal">
+        <p className="text-white/80 text-xs sm:text-sm font-normal">
           {activeLeague.description}
         </p>
 
         {/* League Rewards Description & Edge Function Trigger */}
-        <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-white/45 block mb-0.5">
+            <span className="text-[10px] font-black uppercase tracking-wider text-white/40 block mb-0.5">
               Weekly Tournament Rewards ({activeLeague.name})
             </span>
             <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
@@ -433,7 +448,7 @@ export default function LeaderboardTab() {
       <div className="space-y-2.5">
         {loading ? (
           Array(5).fill(0).map((_, i) => (
-            <div key={i} className="h-16 bg-white/5 rounded-2xl animate-pulse" />
+            <div key={i} className="h-16 bg-white border border-slate-200 rounded-2xl animate-pulse" />
           ))
         ) : (
           users.map((user) => {
@@ -447,22 +462,22 @@ export default function LeaderboardTab() {
                 key={user.id} 
                 className={`
                   flex items-center justify-between p-3.5 sm:p-4 rounded-2xl transition-all border
-                  ${isFirst ? 'bg-gradient-to-r from-yellow-500/20 via-amber-500/10 to-transparent border-yellow-500/40 shadow-[0_4px_16px_rgba(234,179,8,0.15)]' :
-                    isSecond ? 'bg-gradient-to-r from-slate-300/15 via-slate-400/10 to-transparent border-slate-300/30' :
-                    isThird ? 'bg-gradient-to-r from-amber-700/15 via-orange-800/10 to-transparent border-amber-600/30' :
-                    isMe ? `ring-2 ${activeLeague.avatarRing} bg-sky-500/10 border-sky-500/30` : 'bg-white/5 border-white/5 hover:bg-white/10'}
+                  ${isFirst ? 'bg-gradient-to-r from-amber-50 to-yellow-50/40 border-amber-200 shadow-sm' :
+                    isSecond ? 'bg-gradient-to-r from-slate-100 to-slate-50/40 border-slate-200 shadow-sm' :
+                    isThird ? 'bg-gradient-to-r from-orange-50 to-amber-50/40 border-orange-200 shadow-sm' :
+                    isMe ? `ring-2 ring-sky-500/30 bg-sky-50 border-sky-300 shadow-sm` : 'bg-white border-slate-200 hover:bg-slate-50'}
                 `}
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className="w-7 text-center font-black text-sm sm:text-base shrink-0">
                     {isFirst ? (
-                      <Crown size={22} className="text-yellow-400 fill-yellow-400 mx-auto" />
+                      <Crown size={22} className="text-yellow-500 fill-yellow-500 mx-auto" />
                     ) : isSecond ? (
-                      <span className="text-slate-300 font-black">2</span>
+                      <span className="text-slate-400 font-black">2</span>
                     ) : isThird ? (
-                      <span className="text-amber-500 font-black">3</span>
+                      <span className="text-amber-600 font-black">3</span>
                     ) : (
-                      <span className="text-white/40">{user.rank}</span>
+                      <span className="text-slate-400">{user.rank}</span>
                     )}
                   </div>
 
@@ -470,16 +485,16 @@ export default function LeaderboardTab() {
                     isFirst ? 'bg-gradient-to-tr from-yellow-400 to-amber-500 text-black border border-yellow-300' :
                     isSecond ? 'bg-gradient-to-tr from-slate-300 to-slate-400 text-black border border-slate-200' :
                     isThird ? 'bg-gradient-to-tr from-amber-600 to-orange-700 text-white border border-amber-500' :
-                    'bg-white/10 text-white/80 border border-white/10'
+                    'bg-slate-100 text-slate-700 border border-slate-200'
                   }`}>
                     {user.username?.[0]?.toUpperCase() || '?'}
                   </div>
 
                   <div className="truncate">
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-white text-sm truncate">{user.username || 'Mysterious Dev'}</h4>
+                      <h4 className="font-bold text-slate-900 text-sm truncate">{user.username || 'Mysterious Dev'}</h4>
                       {isMe && (
-                        <span className="text-[9px] bg-sky-500 text-white font-black px-2 py-0.2 rounded-full uppercase shrink-0">
+                        <span className="text-[9px] bg-sky-600 text-white font-black px-2 py-0.2 rounded-full uppercase shrink-0">
                           You
                         </span>
                       )}
@@ -488,7 +503,7 @@ export default function LeaderboardTab() {
                         <span>{activeLeague.name}</span>
                       </span>
                     </div>
-                    <p className="text-[11px] font-black text-sky-400 uppercase tracking-wider tabular-nums mt-0.5">
+                    <p className="text-[11px] font-black text-sky-600 uppercase tracking-wider tabular-nums mt-0.5">
                       {user.xp} XP
                     </p>
                   </div>
@@ -496,18 +511,18 @@ export default function LeaderboardTab() {
 
                 <div className="flex items-center gap-3 shrink-0">
                   {user.change === 'up' && (
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200">
                       <TrendingUp size={14} />
                       <span className="hidden sm:inline">Promoted</span>
                     </span>
                   )}
                   {user.change === 'down' && (
-                    <span className="flex items-center gap-1 text-[11px] font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">
                       <TrendingDown size={14} />
                       <span className="hidden sm:inline">Demoted</span>
                     </span>
                   )}
-                  {user.change === 'none' && <Minus size={16} className="text-white/20" />}
+                  {user.change === 'none' && <Minus size={16} className="text-slate-300" />}
                 </div>
               </div>
             );

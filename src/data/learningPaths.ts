@@ -36,11 +36,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'Web Full-Stack',
     isAdvancedTrack: false,
     colorTheme: {
-      gradient: 'from-sky-500/20 via-blue-600/10 to-indigo-950/40',
-      border: 'border-sky-500/30',
-      badge: 'bg-sky-500/20 text-sky-300 border-sky-400/30',
-      accent: 'text-sky-400',
-      bar: 'from-sky-400 to-blue-500'
+      gradient: 'from-sky-50 via-blue-50/50 to-sky-100/80',
+      border: 'border-sky-200/80',
+      badge: 'bg-sky-100 text-sky-800 border-sky-200',
+      accent: 'text-sky-600 font-bold',
+      bar: 'from-sky-500 to-blue-600'
     }
   },
   {
@@ -54,11 +54,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'Python & AI',
     isAdvancedTrack: false,
     colorTheme: {
-      gradient: 'from-amber-500/20 via-yellow-600/10 to-amber-950/40',
-      border: 'border-amber-500/30',
-      badge: 'bg-amber-500/20 text-amber-300 border-amber-400/30',
-      accent: 'text-amber-400',
-      bar: 'from-amber-400 to-yellow-500'
+      gradient: 'from-amber-50 via-yellow-50/50 to-amber-100/80',
+      border: 'border-amber-200/80',
+      badge: 'bg-amber-100 text-amber-800 border-amber-200',
+      accent: 'text-amber-600 font-bold',
+      bar: 'from-amber-500 to-yellow-500'
     }
   },
   {
@@ -72,11 +72,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'Java Enterprise',
     isAdvancedTrack: true,
     colorTheme: {
-      gradient: 'from-orange-500/20 via-red-600/10 to-orange-950/40',
-      border: 'border-orange-500/30',
-      badge: 'bg-orange-500/20 text-orange-300 border-orange-400/30',
-      accent: 'text-orange-400',
-      bar: 'from-orange-400 to-red-500'
+      gradient: 'from-orange-50 via-red-50/50 to-orange-100/80',
+      border: 'border-orange-200/80',
+      badge: 'bg-orange-100 text-orange-800 border-orange-200',
+      accent: 'text-orange-600 font-bold',
+      bar: 'from-orange-500 to-red-500'
     }
   },
   {
@@ -90,11 +90,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'C++ Systems',
     isAdvancedTrack: true,
     colorTheme: {
-      gradient: 'from-blue-500/20 via-indigo-600/10 to-blue-950/40',
-      border: 'border-blue-500/30',
-      badge: 'bg-blue-500/20 text-blue-300 border-blue-400/30',
-      accent: 'text-blue-400',
-      bar: 'from-blue-400 to-indigo-500'
+      gradient: 'from-blue-50 via-indigo-50/50 to-blue-100/80',
+      border: 'border-blue-200/80',
+      badge: 'bg-blue-100 text-blue-800 border-blue-200',
+      accent: 'text-blue-600 font-bold',
+      bar: 'from-blue-500 to-indigo-600'
     }
   },
   {
@@ -108,11 +108,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'Backend Architect',
     isAdvancedTrack: true,
     colorTheme: {
-      gradient: 'from-emerald-500/20 via-teal-600/10 to-green-950/40',
-      border: 'border-emerald-500/30',
-      badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30',
-      accent: 'text-emerald-400',
-      bar: 'from-emerald-400 to-teal-500'
+      gradient: 'from-emerald-50 via-teal-50/50 to-emerald-100/80',
+      border: 'border-emerald-200/80',
+      badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      accent: 'text-emerald-600 font-bold',
+      bar: 'from-emerald-500 to-teal-600'
     }
   },
   {
@@ -126,11 +126,11 @@ export const PATHS_METADATA: PathMeta[] = [
     tag: 'Cloud & Kubernetes',
     isAdvancedTrack: true,
     colorTheme: {
-      gradient: 'from-purple-500/20 via-pink-600/10 to-purple-950/40',
-      border: 'border-purple-500/30',
-      badge: 'bg-purple-500/20 text-purple-300 border-purple-400/30',
-      accent: 'text-purple-400',
-      bar: 'from-purple-400 to-pink-500'
+      gradient: 'from-purple-50 via-pink-50/50 to-purple-100/80',
+      border: 'border-purple-200/80',
+      badge: 'bg-purple-100 text-purple-800 border-purple-200',
+      accent: 'text-purple-600 font-bold',
+      bar: 'from-purple-500 to-pink-600'
     }
   }
 ];
@@ -185,15 +185,19 @@ export function isModuleUnlockedForUser(
   // PRO tier unlocks ALL advance modules across ALL paths
   if (subscriptionTier === 'pro') return true;
 
-  // StudentPlus unlocks advance modules for their unlocked learning paths
-  if (subscriptionTier === 'student_plus') {
-    const unlockedList = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 
-      ? unlockedAdvancedPathIds 
-      : [unlockedAdvancedPathId || 'web-dev'];
-    return unlockedList.includes(pathId);
+  // Core tracks (web-dev and python) have their advanced modules free for everyone
+  const meta = getPathMeta(pathId);
+  if (meta && !meta.isAdvancedTrack) return true;
+
+  // Otherwise, check if the path is in the user's unlocked list (StudentPlus choices or basic defaults)
+  const list = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 
+    ? unlockedAdvancedPathIds 
+    : [unlockedAdvancedPathId || 'web-dev'];
+  
+  if (list.includes(pathId)) {
+    return true;
   }
 
-  // Basic / Free tier: advance modules are locked
   return false;
 }
 
@@ -223,4 +227,48 @@ export function getAllLessonsGlobally(): Lesson[] {
     }
   }
   return results;
+}
+
+export function findModuleAndPathForLesson(lessonId: string): { pathId: string; module: Module | null } {
+  for (const [pathId, modules] of Object.entries(PATH_MODULES_MAP)) {
+    for (const mod of modules) {
+      if (mod.lessons.some(l => l.id === lessonId)) {
+        return { pathId, module: mod };
+      }
+    }
+  }
+  return { pathId: 'web-dev', module: null };
+}
+
+export function isLessonQuizUnlockedForUser(
+  lessonId: string,
+  completedLessons: string[],
+  subscriptionTier: string,
+  unlockedAdvancedPathId?: string | null,
+  unlockedAdvancedPathIds?: string[] | null
+): { unlocked: boolean; reason?: 'advance_locked' | 'sequence_locked' } {
+  const { pathId, module } = findModuleAndPathForLesson(lessonId);
+
+  // 1. Check if module is advance locked
+  if (module && module.isAdvanced) {
+    const isAdvanceUnlocked = isModuleUnlockedForUser(pathId, module, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds);
+    if (!isAdvanceUnlocked) {
+      return { unlocked: false, reason: 'advance_locked' };
+    }
+  }
+
+  // 2. Check sequential progression in that path
+  const pathLessons = getAllLessonsForPath(pathId);
+  const lessonIdx = pathLessons.findIndex(l => l.id === lessonId);
+  if (lessonIdx > 0) {
+    if (completedLessons.includes(lessonId)) {
+      return { unlocked: true };
+    }
+    const activeIdx = pathLessons.findIndex(l => !completedLessons.includes(l.id));
+    if (activeIdx !== -1 && lessonIdx > activeIdx) {
+      return { unlocked: false, reason: 'sequence_locked' };
+    }
+  }
+
+  return { unlocked: true };
 }

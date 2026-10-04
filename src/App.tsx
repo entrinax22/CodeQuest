@@ -23,6 +23,7 @@ import CurriculumHandbookModal from './components/CurriculumHandbookModal';
 import LearningPathSelectorModal from './components/LearningPathSelectorModal';
 import LearningPathsHub from './components/LearningPathsHub';
 import SplashScreen from './components/SplashScreen';
+import DebugConsoleModal from './components/DebugConsoleModal';
 import { getPathModules, getPathMeta, PATHS_METADATA, isModuleUnlockedForUser, isPathUnlockedForUser } from './data/learningPaths';
 
 export default function App() {
@@ -41,7 +42,7 @@ export default function App() {
   const [learnView, setLearnView] = useState<'paths' | 'roadmap'>('paths');
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [lessonInitialMode, setLessonInitialMode] = useState<'briefing' | 'exercises'>('briefing');
-  const [selectedTopicInfo, setSelectedTopicInfo] = useState<{ lesson: Lesson; moduleTitle: string; isCompleted: boolean; isAdvancedLocked?: boolean } | null>(null);
+  const [selectedTopicInfo, setSelectedTopicInfo] = useState<{ lesson: Lesson; moduleTitle: string; isCompleted: boolean; isAdvancedLocked?: boolean; isSequentialLocked?: boolean } | null>(null);
   const [showHandbookModal, setShowHandbookModal] = useState<boolean>(false);
   const [showPathSelectorModal, setShowPathSelectorModal] = useState<boolean>(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState<boolean>(false);
@@ -216,9 +217,9 @@ export default function App() {
   const levelProgressPercent = Math.min(100, Math.round((xpIntoCurrentLevel / 1000) * 100));
 
   return (
-    <div className="flex flex-col h-screen bg-[#0A0A0B] text-white font-sans selection:bg-blue-500/30 overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-sky-500/30 overflow-hidden">
       {/* Top Header Navigation & Stats HUD */}
-      <header className="h-14 sm:h-16 px-3 sm:px-6 md:px-8 border-b border-white/10 bg-[#0C0D12]/90 backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 shadow-sm w-full select-none">
+      <header className="h-14 sm:h-16 px-3 sm:px-6 md:px-8 border-b border-slate-800 bg-[#0F172A] text-white sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-4 shadow-md w-full select-none">
         {/* Brand Zone */}
         <div className="flex items-center gap-2.5 shrink-0">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white font-black shadow-md shadow-sky-950/30 shrink-0">
@@ -230,7 +231,7 @@ export default function App() {
         </div>
 
         {/* Minimalist Stats Capsule */}
-        <div className="flex items-center bg-[#131520] border border-white/10 rounded-full px-2 py-1 gap-1 sm:gap-1.5 shadow-inner shrink min-w-0">
+        <div className="flex items-center bg-[#1E293B] border border-slate-700 rounded-full px-2 py-1 gap-1 sm:gap-1.5 shadow-inner shrink min-w-0">
           {/* Streak Stat */}
           <div 
             className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs font-bold text-amber-300 cursor-default"
@@ -284,12 +285,12 @@ export default function App() {
           {/* SaaS Pro / Plus Pill */}
           <button
             onClick={() => setShowSubscriptionModal(true)}
-            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+            className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
               subscriptionTier === 'pro'
                 ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 hover:bg-amber-400/30'
                 : subscriptionTier === 'student_plus'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30'
-                : 'bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 hover:brightness-110'
+                : 'bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 hover:text-white'
             }`}
             title="Manage or upgrade membership"
           >
@@ -305,8 +306,8 @@ export default function App() {
               </>
             ) : (
               <>
-                <Crown size={11} className="fill-amber-950" />
-                <span className="hidden sm:inline">PRO</span>
+                <Sparkles size={11} className="text-yellow-400 fill-yellow-400" />
+                <span>GET PRO</span>
               </>
             )}
           </button>
@@ -316,7 +317,7 @@ export default function App() {
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             onClick={toggleSound}
-            className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 flex items-center justify-center transition-all cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center transition-all cursor-pointer"
             title={soundEnabled ? 'Mute Sound Effects' : 'Unmute Sound Effects'}
           >
             {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} className="text-white/30" />}
@@ -327,7 +328,7 @@ export default function App() {
             className={`flex items-center gap-1.5 p-1 sm:pr-2 rounded-xl transition-all cursor-pointer border ${
               activeTab === 'profile' 
                 ? 'bg-sky-500/20 border-sky-400/50' 
-                : 'bg-white/5 hover:bg-white/10 border-white/10'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700'
             }`}
             title="Profile & Level"
           >
@@ -390,15 +391,15 @@ export default function App() {
             <div className="flex items-center justify-between gap-3 mb-6">
               <button
                 onClick={() => setLearnView('paths')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 font-black text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-sm group"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 font-black text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-sm group"
               >
-                <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+                <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform text-slate-500" />
                 <span>All Learning Paths</span>
               </button>
 
               <button
                 onClick={() => setShowPathSelectorModal(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 font-black text-xs uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-600 text-white font-black text-xs uppercase tracking-wider transition-all cursor-pointer shadow-sm"
               >
                 <Layers size={14} />
                 <span>Switch Track</span>
@@ -406,7 +407,7 @@ export default function App() {
             </div>
 
             {/* Active Learning Track Selector Banner */}
-            <div className={`bg-gradient-to-br ${currentPathMeta.colorTheme.gradient} border ${currentPathMeta.colorTheme.border} rounded-3xl p-5 mb-6 shadow-xl backdrop-blur-sm relative overflow-hidden transition-all group`}>
+            <div className={`bg-gradient-to-br ${currentPathMeta.colorTheme.gradient} border ${currentPathMeta.colorTheme.border} rounded-3xl p-5 mb-6 shadow-sm relative overflow-hidden transition-all group`}>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl filter drop-shadow-md">{currentPathMeta.iconEmoji}</span>
@@ -415,11 +416,11 @@ export default function App() {
                       <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${currentPathMeta.colorTheme.badge}`}>
                         {currentPathMeta.tag} Track
                       </span>
-                      <span className="text-[10px] font-bold text-white/50">
+                      <span className="text-[10px] font-bold text-slate-500">
                         {currentPathMeta.badge}
                       </span>
                     </div>
-                    <h3 className="text-lg font-black text-white tracking-tight mt-0.5">
+                    <h3 className="text-lg font-black text-slate-900 tracking-tight mt-0.5">
                       {currentPathMeta.title}
                     </h3>
                   </div>
@@ -427,26 +428,26 @@ export default function App() {
 
                 <button
                   onClick={() => setShowPathSelectorModal(true)}
-                  className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 border border-white/15 active:scale-95 shadow-md shrink-0 cursor-pointer"
+                  className="px-3.5 py-2 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 border border-slate-200 active:scale-95 shadow-sm shrink-0 cursor-pointer"
                 >
-                  <Layers size={13} />
+                  <Layers size={13} className="text-slate-500" />
                   <span>Switch Track</span>
                 </button>
               </div>
 
-              <p className="text-white/70 text-xs mb-3 font-normal">
+              <p className="text-slate-600 text-xs mb-3 font-normal">
                 {currentPathMeta.description}
               </p>
 
               {/* Path Progress Bar */}
-              <div className="pt-2 border-t border-white/10">
+              <div className="pt-2 border-t border-slate-200">
                 <div className="flex items-center justify-between text-xs mb-1 font-bold">
-                  <span className="text-white/50">Curriculum Progress</span>
+                  <span className="text-slate-500">Curriculum Progress</span>
                   <span className={currentPathMeta.colorTheme.accent}>
                     {currentPathDoneCount} / {allLessons.length} Lessons ({currentPathProgressPercent}%)
                   </span>
                 </div>
-                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden p-0.5">
+                <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden p-0.5 border border-slate-300/10">
                   <div
                     className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${currentPathMeta.colorTheme.bar}`}
                     style={{ width: `${currentPathProgressPercent}%` }}
@@ -456,26 +457,26 @@ export default function App() {
             </div>
 
             {/* Interactive Theory Handbook & Cheatsheet Banner */}
-            <div className="bg-gradient-to-r from-sky-500/10 via-blue-600/10 to-indigo-600/10 border border-sky-500/20 hover:border-sky-400/40 rounded-3xl p-4 sm:p-5 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg transition-all group backdrop-blur-sm">
+            <div className="bg-white border border-slate-200 hover:border-sky-400/40 rounded-3xl p-4 sm:p-5 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm transition-all group">
               <div className="flex items-center gap-3.5">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white shadow-md shrink-0 group-hover:scale-105 transition-transform">
                   <BookOpen size={22} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm sm:text-base font-black text-white leading-tight">Theory Handbook & Cheat Sheets</h3>
-                    <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-500/20 px-2 py-0.5 rounded-full border border-sky-400/30">
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">Theory Handbook & Cheat Sheets</h3>
+                    <span className="text-[10px] font-black uppercase text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full border border-sky-200">
                       {allLessons.length} Topics
                     </span>
                   </div>
-                  <p className="text-white/60 text-xs mt-0.5">
+                  <p className="text-slate-500 text-xs mt-0.5">
                     Browse full lesson guides, code cheat sheets, and live browser previews
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowHandbookModal(true)}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/40 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 cursor-pointer shadow-sm"
               >
                 <span>Read Guides</span>
                 <ChevronRight size={15} />
@@ -494,7 +495,7 @@ export default function App() {
                 return (
                   <div key={module.id} className="w-full flex flex-col items-center">
                     {/* Vibrant Module Header Card */}
-                    <div className={`w-full bg-gradient-to-br ${theme.gradient} border ${theme.border} rounded-3xl p-6 mb-12 shadow-xl relative overflow-hidden backdrop-blur-sm`}>
+                    <div className={`w-full bg-gradient-to-br ${theme.gradient} border ${theme.border} rounded-3xl p-6 mb-12 shadow-sm relative overflow-hidden`}>
                       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                           <span className={`text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${theme.badge}`}>
@@ -504,24 +505,24 @@ export default function App() {
                           {module.isAdvanced && (
                             <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
                               isModuleAdvanceLocked 
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' 
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                             }`}>
-                              {isModuleAdvanceLocked ? <Lock size={10} /> : <Crown size={10} className="fill-emerald-300" />}
+                              {isModuleAdvanceLocked ? <Lock size={10} /> : <Crown size={10} className="fill-emerald-800" />}
                               <span>{isModuleAdvanceLocked ? 'Advance Locked' : 'Advance Unlocked'}</span>
                             </span>
                           )}
                         </div>
 
-                        <span className="text-xs font-bold text-white/60">
+                        <span className="text-xs font-bold text-slate-500">
                           {completedModLessons} / {totalModLessons} Done
                         </span>
                       </div>
-                      <h3 className="text-2xl font-black text-white tracking-tight mb-1">{module.title}</h3>
-                      <p className="text-white/60 text-xs mb-4">{module.description}</p>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-1">{module.title}</h3>
+                      <p className="text-slate-600 text-xs mb-4">{module.description}</p>
 
                       {/* Progress Bar */}
-                      <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden p-0.5">
+                      <div className="w-full h-2.5 bg-slate-200/80 rounded-full overflow-hidden p-0.5 border border-slate-300/10">
                         <div 
                           className={`h-full bg-gradient-to-r ${theme.bar} rounded-full transition-all duration-500`}
                           style={{ width: `${modProgress}%` }}
@@ -529,8 +530,9 @@ export default function App() {
                       </div>
                     </div>
                     
-                    {/* Winding Snake Path */}
-                    <div className="relative flex flex-col items-center gap-9 w-full">
+                    {/* Winding Snake Path with Trail (Connecting Trail Line Removed) */}
+                    <div className="relative flex flex-col items-center gap-9 w-full py-2 overflow-x-hidden">
+
                       {module.lessons.map((lesson, lessonIdx) => {
                         // Find lesson global index
                         const globalIdx = allLessons.findIndex(l => l.id === lesson.id);
@@ -557,23 +559,13 @@ export default function App() {
                               locked={isLocked || isModuleAdvanceLocked}
                               isBoss={lesson.isBoss}
                               onClick={() => {
-                                if (isModuleAdvanceLocked) {
-                                  setSelectedTopicInfo({
-                                    lesson,
-                                    moduleTitle: module.title,
-                                    isCompleted,
-                                    isAdvancedLocked: true
-                                  });
-                                } else if (isLocked) {
-                                  setLockedToast('Complete previous lessons to unlock this topic!');
-                                } else {
-                                  setSelectedTopicInfo({
-                                    lesson,
-                                    moduleTitle: module.title,
-                                    isCompleted,
-                                    isAdvancedLocked: false
-                                  });
-                                }
+                                setSelectedTopicInfo({
+                                  lesson,
+                                  moduleTitle: module.title,
+                                  isCompleted,
+                                  isAdvancedLocked: isModuleAdvanceLocked,
+                                  isSequentialLocked: isLocked
+                                });
                               }}
                             />
                           </div>
@@ -801,7 +793,7 @@ export default function App() {
       </main>
 
       {/* Fixed Bottom Navigation Dock (Responsive Centered Pill on Desktop) */}
-      <nav className="fixed bottom-0 left-0 right-0 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-lg sm:rounded-3xl sm:border sm:border-white/10 sm:shadow-[0_10px_35px_rgba(0,0,0,0.8)] h-18 sm:h-20 bg-[#0C0D14]/95 border-t border-white/10 px-2 sm:px-6 flex items-center justify-around z-30 backdrop-blur-xl">
+      <nav className="fixed bottom-0 left-0 right-0 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-lg sm:rounded-3xl sm:border sm:border-white/10 sm:shadow-[0_10px_35px_rgba(0,0,0,0.8)] h-16 sm:h-20 bg-[#0C0D14]/95 border-t border-white/10 px-2 sm:px-6 flex items-center justify-around z-30 backdrop-blur-xl">
         <NavButton active={activeTab === 'learn'} icon={<BookOpen />} label="Learn" onClick={() => { setActiveTab('learn'); setLearnView('paths'); }} />
         <NavButton active={activeTab === 'social'} icon={<Users />} label="Friends" onClick={() => setActiveTab('social')} />
         <NavButton active={activeTab === 'leaderboard'} icon={<Trophy />} label="Leagues" onClick={() => setActiveTab('leaderboard')} />
@@ -818,13 +810,12 @@ export default function App() {
         isCompleted={Boolean(selectedTopicInfo?.isCompleted)}
         hearts={hearts}
         isAdvancedLocked={Boolean(selectedTopicInfo?.isAdvancedLocked)}
+        isSequentialLocked={Boolean(selectedTopicInfo?.isSequentialLocked)}
         isStudentPlus={subscriptionTier === 'student_plus'}
-        onUnlockAdvance={() => {
-          if (subscriptionTier === 'student_plus') {
-            setStudentPlusAdvancedPath(activePathId);
-            setSelectedTopicInfo(null);
-          } else {
-            setSelectedTopicInfo(null);
+        onUnlockAdvance={async () => {
+          const success = await setStudentPlusAdvancedPath(activePathId);
+          setSelectedTopicInfo(null);
+          if (!success) {
             setShowSubscriptionModal(true);
           }
         }}
@@ -851,6 +842,16 @@ export default function App() {
         onClose={() => setShowHandbookModal(false)}
         completedLessons={completedLessons}
         activePathId={activePathId}
+        subscriptionTier={subscriptionTier}
+        unlockedAdvancedPathId={unlockedAdvancedPathId}
+        unlockedAdvancedPathIds={unlockedAdvancedPathIds}
+        onOpenSubscription={() => setShowSubscriptionModal(true)}
+        onUnlockAdvanceTrack={async (pathId) => {
+          const success = await setStudentPlusAdvancedPath(pathId);
+          if (!success) {
+            setShowSubscriptionModal(true);
+          }
+        }}
         onSelectLesson={(lesson, mode) => {
           setShowHandbookModal(false);
           setLessonInitialMode(mode);
@@ -894,6 +895,9 @@ export default function App() {
           onClose={() => setShowSubscriptionModal(false)}
         />
       )}
+
+      {/* Live In-App Debug Console Drawer */}
+      <DebugConsoleModal />
     </div>
   );
 }
@@ -916,7 +920,7 @@ function LessonNode({ title, description, completed, active, locked, isBoss, onC
     >
       {/* 3D Chunky Node Button */}
       <div className={`
-        relative w-18 h-18 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none
+        relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none
         ${completed 
           ? 'bg-gradient-to-b from-emerald-400 to-emerald-500 border-b-[6px] border-emerald-700 text-white shadow-[0_6px_0_rgb(4,120,87),0_10px_20px_rgba(16,185,129,0.3)] hover:brightness-110 active:translate-y-1 active:border-b-2' 
           : ''}
@@ -953,10 +957,10 @@ function LessonNode({ title, description, completed, active, locked, isBoss, onC
       <div className="mt-2.5 text-center max-w-[130px]">
         <span className={`text-xs font-black uppercase tracking-tight block ${
           active 
-            ? 'text-sky-300 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]' 
+            ? 'text-sky-600' 
             : completed 
-              ? 'text-emerald-400' 
-              : 'text-white/40'
+              ? 'text-emerald-600' 
+              : 'text-slate-400'
         }`}>
           {title}
         </span>

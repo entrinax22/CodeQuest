@@ -83,6 +83,22 @@ export default function SocialTab() {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
 
+  // Share Post Menu state
+  const [activeSharePostId, setActiveSharePostId] = useState<string | null>(null);
+  const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
+
+  const handleCopyLink = (post: FeedPost) => {
+    sounds.playCorrect();
+    const shareUrl = `${window.location.origin}/posts/${post.id}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopiedPostId(post.id);
+      setTimeout(() => {
+        setCopiedPostId(null);
+        setActiveSharePostId(null);
+      }, 1500);
+    });
+  };
+
   useEffect(() => {
     supabase?.auth.getUser().then(({ data: { user } }) => {
       if (user) {
@@ -1023,34 +1039,106 @@ export default function SocialTab() {
                     )}
 
                     {/* Interaction Bar */}
-                    <div className="flex items-center justify-between gap-1 pt-3 border-t border-white/[0.08] text-xs w-full min-w-0">
+                    <div className="flex items-center justify-between gap-1 pt-3 border-t border-slate-200 text-xs w-full min-w-0">
                       <button
                         onClick={() => toggleCheer(post.id)}
-                        className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border ${
                           post.cheeredByMe
-                            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                            : 'bg-white/5 hover:bg-white/10 text-white/60 border border-white/5'
+                            ? 'bg-rose-100 text-rose-700 border-rose-200 shadow-sm'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
                         }`}
                       >
-                        <Heart size={14} className={post.cheeredByMe ? 'fill-rose-400 text-rose-400' : ''} />
+                        <Heart size={14} className={post.cheeredByMe ? 'fill-rose-500 text-rose-500' : ''} />
                         <span className="text-xs">{post.cheeredByMe ? 'Cheered' : 'Cheer'} ({post.cheers})</span>
                       </button>
 
                       <button 
                         onClick={() => setActiveCommentPostId(isCommenting ? null : post.id)}
-                        className="text-white/60 hover:text-white flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer bg-white/5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-white/5 shrink-0"
+                        className="text-slate-600 hover:text-slate-900 hover:bg-slate-200 flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 shrink-0"
                       >
-                        <MessageSquare size={14} className="text-sky-400" />
+                        <MessageSquare size={14} className="text-sky-600 fill-sky-100" />
                         <span className="text-xs">Comments ({postComments.length})</span>
                       </button>
 
-                      <button 
-                        onClick={() => sounds.playCorrect()}
-                        className="text-white/40 hover:text-white flex items-center gap-1 text-xs font-medium transition-colors cursor-pointer shrink-0 px-2 py-1.5"
-                      >
-                        <Share2 size={13} />
-                        <span className="hidden sm:inline text-xs">Share</span>
-                      </button>
+                      <div className="relative">
+                        <button 
+                          onClick={() => {
+                            sounds.playClick();
+                            setActiveSharePostId(activeSharePostId === post.id ? null : post.id);
+                          }}
+                          className={`text-slate-600 hover:text-slate-900 hover:bg-slate-200 flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-xl border shrink-0 ${
+                            activeSharePostId === post.id ? 'border-sky-400 bg-sky-50' : 'border-slate-200'
+                          }`}
+                        >
+                          <Share2 size={13} />
+                          <span className="hidden sm:inline text-xs">Share</span>
+                        </button>
+
+                        {activeSharePostId === post.id && (
+                          <div className="absolute right-0 bottom-full mb-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl p-2.5 z-40 animate-in fade-in slide-in-from-bottom-2 duration-150 text-slate-800 text-left">
+                            <div className="text-[10px] font-black uppercase text-slate-400 px-2.5 py-1.5 border-b border-slate-100 mb-1.5">
+                              Share Quest Post
+                            </div>
+                            
+                            {/* Copy Link Option */}
+                            <button
+                              onClick={() => handleCopyLink(post)}
+                              className="w-full text-left px-2.5 py-2 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer"
+                            >
+                              <span className="flex items-center gap-2">
+                                <Code size={13} className="text-slate-500" />
+                                <span>{copiedPostId === post.id ? 'Link Copied!' : 'Copy Link'}</span>
+                              </span>
+                              {copiedPostId === post.id && <Check size={12} className="text-emerald-500 shrink-0" />}
+                            </button>
+
+                            {/* Share to Twitter / X */}
+                            <a
+                              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out @${post.author}'s coding achievement on CodeQuest: "${post.content}" 🔥 Join CodeQuest Academy to learn to code!`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => {
+                                sounds.playCorrect();
+                                setActiveSharePostId(null);
+                              }}
+                              className="w-full text-left px-2.5 py-2 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-slate-900 cursor-pointer"
+                            >
+                              <span className="font-extrabold text-[11px] w-3.5 text-center">X</span>
+                              <span>Post to Twitter / X</span>
+                            </a>
+
+                            {/* Share to Facebook */}
+                            <a
+                              href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`https://ais-pre-lr7b6ihtombbbz7d55dmn3-72429909527.asia-southeast1.run.app`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => {
+                                sounds.playCorrect();
+                                setActiveSharePostId(null);
+                              }}
+                              className="w-full text-left px-2.5 py-2 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#1877F2] cursor-pointer"
+                            >
+                              <span className="font-extrabold text-[12px] w-3.5 text-center">f</span>
+                              <span>Share to Facebook</span>
+                            </a>
+
+                            {/* Share to WhatsApp */}
+                            <a
+                              href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Check out @${post.author}'s coding achievement on CodeQuest: "${post.content}" 🚀 Join CodeQuest Academy: https://ais-pre-lr7b6ihtombbbz7d55dmn3-72429909527.asia-southeast1.run.app`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => {
+                                sounds.playCorrect();
+                                setActiveSharePostId(null);
+                              }}
+                              className="w-full text-left px-2.5 py-2 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 text-[#25D366] cursor-pointer"
+                            >
+                              <span className="font-extrabold text-[12px] w-3.5 text-center">w</span>
+                              <span>Share to WhatsApp</span>
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Comments Expandable Drawer */}

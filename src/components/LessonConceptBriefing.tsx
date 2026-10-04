@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   BookOpen, Code, Play, CheckCircle2, Lightbulb, AlertTriangle, 
-  Eye, ArrowRight, Layers, FileCode, Terminal, HelpCircle, X, Sparkles, Copy, Check
+  Eye, ArrowRight, Layers, FileCode, Terminal, HelpCircle, X, Sparkles, Copy, Check, Lock
 } from 'lucide-react';
 import { TeachingConcept } from '../data/lessonConcepts';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,6 +13,8 @@ interface LessonConceptBriefingProps {
   onStartExercises: () => void;
   isDrawer?: boolean;
   onCloseDrawer?: () => void;
+  isLocked?: boolean;
+  lockReason?: 'advance_locked' | 'sequence_locked';
 }
 
 export default function LessonConceptBriefing({
@@ -21,7 +23,9 @@ export default function LessonConceptBriefing({
   concept,
   onStartExercises,
   isDrawer = false,
-  onCloseDrawer
+  onCloseDrawer,
+  isLocked = false,
+  lockReason
 }: LessonConceptBriefingProps) {
   const hasPreview = Boolean(concept.previewHtml || concept.terminalOutput);
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>(hasPreview ? 'preview' : 'code');
@@ -246,10 +250,19 @@ export default function LessonConceptBriefing({
 
         <button
           onClick={onStartExercises}
-          className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-black text-sm uppercase tracking-wider shadow-[0_6px_0_rgb(30,58,138)] active:translate-y-1 transition-all flex items-center justify-center gap-2 shrink-0 group"
+          className={`w-full sm:w-auto px-8 py-4 rounded-2xl text-white font-black text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shrink-0 group cursor-pointer ${
+            isLocked 
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40 hover:bg-amber-500/30' 
+              : 'bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 shadow-[0_6px_0_rgb(30,58,138)] active:translate-y-1'
+          }`}
         >
-          <span>{isDrawer ? 'Resume Challenges' : 'Start Challenges 🚀'}</span>
-          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          {isLocked && <Lock size={16} />}
+          <span>
+            {isLocked 
+              ? (lockReason === 'advance_locked' ? 'Unlock Advance Track to Take Quiz' : 'Quiz Sequentially Locked') 
+              : (isDrawer ? 'Resume Challenges' : 'Start Challenges 🚀')}
+          </span>
+          {!isLocked && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
         </button>
       </div>
     </div>

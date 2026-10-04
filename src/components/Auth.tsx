@@ -240,7 +240,7 @@ export default function Auth() {
             is_pro: false,
             role: emailTrimmed === 'mark.entrina12@gmail.com' ? 'admin' : 'user',
             unlocked_advanced_path_id: 'web-dev',
-            unlocked_advanced_path_ids: ['web-dev'],
+            unlocked_advanced_path_ids: ['web-dev', 'python'],
             student_plus_path_locked: false,
             student_plus_renewal_count: 0
           });

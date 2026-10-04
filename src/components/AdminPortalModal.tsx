@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Shield, QrCode, Smartphone, CheckCircle2, XCircle, RefreshCw, Check, Upload, Lock } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { supabase } from '../lib/supabase';
+import { safeUpsertSubscription } from '../lib/subscriptionDb';
 import { sounds } from '../lib/sound';
 
 interface AdminPortalModalProps {
@@ -33,13 +34,18 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
 
   // Pending payments state
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null);
 
   const fetchPayments = async () => {
     let localPayments: any[] = [];
     const saved = localStorage.getItem('codequest_pending_payments');
     if (saved) {
       try {
-        localPayments = JSON.parse(saved);
+        localPayments = JSON.parse(saved).map((p: any) => ({
+          ...p,
+          proofImage: p.proofImage || '',
+          userId: p.userId || null
+        }));
       } catch {}
     }
 
@@ -59,7 +65,9 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
             method: item.method,
             refNumber: item.reference_number,
             timestamp: new Date(item.created_at).getTime(),
-            status: item.status
+            status: item.status,
+            proofImage: item.proof_image || '',
+            userId: item.user_id
           }));
 
           // Merge local and db without duplicates based on refNumber
@@ -144,15 +152,60 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
           .update({ status: 'approved', updated_at: new Date().toISOString() })
           .eq('id', paymentId);
 
-        // 2. Grant subscription status in Profiles table
+        // 2. Grant subscription status in separate subscriptions table & Profiles table
         const expiryDate = new Date(Date.now() + (payment.cycle === 'monthly' ? 30 : 365) * 24 * 60 * 60 * 1000).toISOString();
-        await supabase.from('profiles').update({
-          is_pro: true,
-          subscription_tier: payment.tier,
-          subscription_expires_at: expiryDate,
-        }).eq('username', payment.username);
-      } catch (err) {
+        
+        let targetUserId = payment.userId;
+
+        if (!targetUserId) {
+          // Fallback to resolve via username
+          const { data: userData } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('username', payment.username)
+            .maybeSingle();
+          targetUserId = userData?.id || null;
+        }
+
+        if (targetUserId) {
+          await safeUpsertSubscription(targetUserId, {
+            tier: payment.tier,
+            is_pro: true,
+            cycle: payment.cycle,
+            expires_at: expiryDate,
+            username: payment.username,
+            amount: payment.amount,
+            payment_method: payment.method,
+            reference_number: payment.refNumber
+          });
+        }
+
+        // Update profiles table as authoritative subscription status
+        if (targetUserId) {
+          const { data: profData } = await supabase.from('profiles').select('subscription_tier, student_plus_renewal_count').eq('id', targetUserId).maybeSingle();
+          const currTier = profData?.subscription_tier || 'basic';
+          const currRenewals = profData?.student_plus_renewal_count || 0;
+          const isRenewal = payment.tier === 'student_plus' && currTier === 'student_plus';
+          const nextRenewals = isRenewal ? currRenewals + 1 : (payment.tier === 'student_plus' ? 0 : currRenewals);
+
+          await supabase.from('profiles').update({
+            is_pro: true,
+            subscription_tier: payment.tier,
+            subscription_expires_at: expiryDate,
+            student_plus_renewal_count: nextRenewals,
+            hearts: 5
+          }).eq('id', targetUserId);
+        } else {
+          await supabase.from('profiles').update({
+            is_pro: true,
+            subscription_tier: payment.tier,
+            subscription_expires_at: expiryDate,
+            hearts: 5
+          }).eq('username', payment.username);
+        }
+      } catch (err: any) {
         console.warn('Could not update profile or payment status in supabase:', err);
+        alert(`Error during approval processing: ${err?.message || err}`);
       }
     }
 
@@ -299,52 +352,77 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
                 </div>
               ) : (
                 pendingPayments.map((p) => (
-                  <div key={p.id} className="bg-white/[0.02] border border-white/10 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-xs">{p.username}</span>
-                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-white/70">
-                          {p.tier === 'pro' ? 'CodeQuest PRO' : 'StudentPlus'} ({p.cycle})
-                        </span>
-                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                          p.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                          p.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
-                          'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}>
-                          {p.status}
+                  <div key={p.id} className="bg-white/[0.02] border border-white/10 p-4 rounded-xl flex flex-col space-y-3">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-white text-xs">{p.username}</span>
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-white/70">
+                            {p.tier === 'pro' ? 'CodeQuest PRO' : 'StudentPlus'} ({p.cycle})
+                          </span>
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                            p.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                            p.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                            'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}>
+                            {p.status}
+                          </span>
+                        </div>
+                        <p className="text-white/50 text-[11px] font-mono">
+                          Method: <strong className="text-white">{p.method}</strong> | Ref: <strong className="text-amber-400 font-bold">{p.refNumber}</strong>
+                        </p>
+                        <span className="text-[10px] text-white/40 block">
+                          Submitted {new Date(p.timestamp).toLocaleString()}
                         </span>
                       </div>
-                      <p className="text-white/50 text-[11px] font-mono">
-                        Method: <strong className="text-white">{p.method}</strong> | Ref: <strong className="text-amber-400 font-bold">{p.refNumber}</strong>
-                      </p>
-                      <span className="text-[10px] text-white/40 block">
-                        Submitted {new Date(p.timestamp).toLocaleString()}
-                      </span>
+
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                        {p.proofImage && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedReceiptId(expandedReceiptId === p.id ? null : p.id)}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/80 text-xs font-bold border border-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Smartphone size={12} />
+                            <span>{expandedReceiptId === p.id ? 'Hide Receipt' : 'View Receipt'}</span>
+                          </button>
+                        )}
+
+                        {p.status === 'pending' ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApprovePayment(p.id)}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                            >
+                              <CheckCircle2 size={13} />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectPayment(p.id)}
+                              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-white/60 hover:text-rose-300 text-xs font-bold flex items-center gap-1 cursor-pointer border border-white/10 transition-colors"
+                            >
+                              <XCircle size={13} />
+                              <span>Reject</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-white/40 font-bold">
+                            {p.status === 'approved' ? '✓ Verified & Approved' : '✕ Rejected'}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    {p.status === 'pending' ? (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleApprovePayment(p.id)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
-                        >
-                          <CheckCircle2 size={13} />
-                          <span>Approve</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRejectPayment(p.id)}
-                          className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-white/60 hover:text-rose-300 text-xs font-bold flex items-center gap-1 cursor-pointer border border-white/10 transition-colors"
-                        >
-                          <XCircle size={13} />
-                          <span>Reject</span>
-                        </button>
+                    {/* Expandable proof image receipt */}
+                    {expandedReceiptId === p.id && p.proofImage && (
+                      <div className="bg-black/30 border border-white/10 p-3 rounded-xl flex flex-col items-center justify-center space-y-2 animate-in slide-in-from-top-2 duration-200">
+                        <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">Submitted Payment Confirmation Screenshot</span>
+                        <div className="max-w-md w-full bg-black/60 p-2 rounded-lg border border-white/10 max-h-96 overflow-hidden flex items-center justify-center">
+                          <img src={p.proofImage} alt={`Receipt @${p.username}`} className="max-h-80 object-contain rounded-md" />
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-xs text-white/40 font-bold">
-                        {p.status === 'approved' ? '✓ Verified & Approved' : '✕ Rejected'}
-                      </span>
                     )}
                   </div>
                 ))

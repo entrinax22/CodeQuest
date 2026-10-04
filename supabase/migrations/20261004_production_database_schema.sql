@@ -183,21 +183,55 @@ CREATE TABLE IF NOT EXISTS public.payment_approvals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     username TEXT NOT NULL,
-    method TEXT NOT NULL, -- 'gcash', 'maya'
+    method TEXT NOT NULL,
     reference_number TEXT NOT NULL,
     amount NUMERIC(10,2) NOT NULL,
-    tier TEXT NOT NULL, -- 'student_plus', 'pro'
-    cycle TEXT DEFAULT 'monthly', -- 'monthly', 'yearly'
+    tier TEXT NOT NULL,
+    cycle TEXT DEFAULT 'monthly',
     proof_image TEXT DEFAULT '',
-    status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    status TEXT DEFAULT 'pending',
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE public.payment_approvals ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users view own payments" ON public.payment_approvals FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users create payments" ON public.payment_approvals FOR INSERT WITH CHECK (true);
-CREATE POLICY "Admins manage payment approvals" ON public.payment_approvals FOR ALL USING (true);
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users view own payments') THEN
+        CREATE POLICY "Users view own payments" ON public.payment_approvals FOR SELECT USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users create payments') THEN
+        CREATE POLICY "Users create payments" ON public.payment_approvals FOR INSERT WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins manage payment approvals') THEN
+        CREATE POLICY "Admins manage payment approvals" ON public.payment_approvals FOR ALL USING (true);
+    END IF;
+END $$;
+
+
+-- 10. SEPARATED SUBSCRIPTIONS TABLE (Premium Entitlements)
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+    id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+    tier TEXT DEFAULT 'basic',
+    is_pro BOOLEAN DEFAULT false,
+    cycle TEXT DEFAULT 'monthly',
+    expires_at TIMESTAMPTZ DEFAULT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users view own subscription') THEN
+        CREATE POLICY "Users view own subscription" ON public.subscriptions FOR SELECT USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Admins manage subscriptions') THEN
+        CREATE POLICY "Admins manage subscriptions" ON public.subscriptions FOR ALL USING (true);
+    END IF;
+END $$;
 
 
 -- Create performance indexes for speed
@@ -206,3 +240,4 @@ CREATE INDEX IF NOT EXISTS idx_profiles_weekly_xp ON public.profiles(weekly_xp D
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON public.posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_follows_follower ON public.follows(follower_id);
 CREATE INDEX IF NOT EXISTS idx_user_completions_user ON public.user_lesson_completions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_tier ON public.subscriptions(tier);

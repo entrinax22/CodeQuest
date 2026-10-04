@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   ArrowRight, Sparkles, BookOpen, Trophy, CheckCircle2, 
   Layers, Code, ChevronRight, Flame, Zap, Crown, Lock, Check,
   Sliders, Star, Award
 } from 'lucide-react';
-import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser, isPathAdvanceUnlockedForUser } from '../data/learningPaths';
+import { PATHS_METADATA, PathMeta, getPathMeta, getPathModules, isPathUnlockedForUser, isPathAdvanceUnlockedForUser } from '../data/learningPaths';
 import { useGameStore } from '../store/useGameStore';
 import { sounds } from '../lib/sound';
+import { supabase } from '../lib/supabase';
 
 interface LearningPathsHubProps {
   onSelectPath: (pathId: string) => void;
@@ -27,11 +28,36 @@ export default function LearningPathsHub({
   onOpenHandbook,
   onOpenSubscription
 }: LearningPathsHubProps) {
-  const { subscriptionTier, unlockedAdvancedPathId, studentPlusPathLocked, setStudentPlusAdvancedPath } = useGameStore();
+  const { 
+    subscriptionTier, 
+    unlockedAdvancedPathId, 
+    unlockedAdvancedPathIds, 
+    studentPlusRenewalCount, 
+    studentPlusPathLocked, 
+    setStudentPlusAdvancedPath,
+    syncWithSupabase
+  } = useGameStore();
+
+  useEffect(() => {
+    const syncLatest = async () => {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await syncWithSupabase(user.id);
+      }
+    };
+    if (supabase) {
+      syncLatest();
+    }
+  }, [syncWithSupabase]);
 
   const isStudentPlus = subscriptionTier === 'student_plus';
   const isPro = subscriptionTier === 'pro';
   const hasChosenAdvanced = isStudentPlus && studentPlusPathLocked && unlockedAdvancedPathId !== 'web-dev';
+
+  const maxAllowed = 1 + (studentPlusRenewalCount || 0);
+  const currentUnlockedAdvancedCount = (unlockedAdvancedPathIds || []).filter(id => getPathMeta(id)?.isAdvancedTrack).length;
+  const hasAvailableSlot = currentUnlockedAdvancedCount < maxAllowed;
 
   const handleSelectTrack = (path: PathMeta) => {
     sounds.playCorrect();
@@ -41,7 +67,7 @@ export default function LearningPathsHub({
   return (
     <div className="max-w-4xl lg:max-w-5xl mx-auto py-6 sm:py-8 space-y-6 sm:space-y-8 text-left animate-in fade-in duration-300">
       {/* Student Welcome Banner */}
-      <div className="bg-gradient-to-r from-sky-500/15 via-indigo-600/15 to-purple-600/15 border border-sky-500/25 rounded-3xl p-5 sm:p-7 shadow-xl backdrop-blur-sm relative overflow-hidden">
+      <div className="bg-[#0F172A] border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
@@ -51,7 +77,7 @@ export default function LearningPathsHub({
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-500/20 px-2.5 py-0.5 rounded-full border border-sky-400/30">
+                <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-500/25 px-2.5 py-0.5 rounded-full border border-sky-400/30">
                   CodeQuest Academy
                 </span>
                 
@@ -63,7 +89,7 @@ export default function LearningPathsHub({
                 ) : isStudentPlus ? (
                   <span className="text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
                     <Zap size={11} className="fill-emerald-400" />
-                    <span>StudentPlus: 1 Advanced Track Choice</span>
+                    <span>StudentPlus Activated</span>
                   </span>
                 ) : (
                   <span className="text-white/40 text-xs">• 6 Career Paths</span>
@@ -72,7 +98,7 @@ export default function LearningPathsHub({
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight leading-tight">
                 Choose Your Learning Path
               </h1>
-              <p className="text-white/60 text-xs sm:text-sm mt-1 max-w-xl">
+              <p className="text-white/70 text-xs sm:text-sm mt-1 max-w-xl">
                 {isStudentPlus 
                   ? "As a StudentPlus scholar, choose 1 advanced path to have permanently unlocked for your subscription."
                   : isPro 
@@ -96,26 +122,26 @@ export default function LearningPathsHub({
       </div>
 
       {/* Theory Handbook & Cheat Sheet Quick Banner */}
-      <div className="bg-gradient-to-r from-sky-500/10 via-blue-600/10 to-indigo-600/10 border border-sky-500/20 hover:border-sky-400/40 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg transition-all group backdrop-blur-sm">
+      <div className="bg-white border border-slate-200 hover:border-sky-400/50 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm transition-all group">
         <div className="flex items-center gap-3.5 sm:gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white shadow-md shrink-0 group-hover:scale-105 transition-transform">
             <BookOpen size={22} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm sm:text-base font-black text-white leading-tight">Theory Handbook & Cheat Sheets</h3>
-              <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-500/20 px-2 py-0.5 rounded-full border border-sky-400/30">
+              <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">Theory Handbook & Cheat Sheets</h3>
+              <span className="text-[10px] font-black uppercase text-sky-600 bg-sky-100 px-2 py-0.5 rounded-full border border-sky-200">
                 78 Topics
               </span>
             </div>
-            <p className="text-white/60 text-xs mt-0.5">
+            <p className="text-slate-500 text-xs mt-0.5">
               Browse complete lesson guides, code cheat sheets, and live browser previews across all paths
             </p>
           </div>
         </div>
         <button
           onClick={onOpenHandbook}
-          className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/40 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 cursor-pointer shadow-sm"
+          className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 cursor-pointer shadow-sm"
         >
           <span>Read Guides</span>
           <ChevronRight size={15} />
@@ -125,10 +151,10 @@ export default function LearningPathsHub({
       {/* Learning Paths List / Grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-xs font-black uppercase tracking-widest text-white/50">
+          <h2 className="text-xs font-black uppercase tracking-widest text-slate-500">
             Available Learning Paths ({PATHS_METADATA.length})
           </h2>
-          <span className="text-xs text-white/40">Switch tracks anytime with progress saved</span>
+          <span className="text-xs text-slate-400">Switch tracks anytime with progress saved</span>
         </div>
 
         {/* 2-Column Responsive Grid on Tablets and Desktops */}
@@ -143,19 +169,19 @@ export default function LearningPathsHub({
             const isCurrentActive = path.id === activePathId;
 
             const isUnlocked = isPathUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId);
-            const isStudentPlusChosen = isStudentPlus && (unlockedAdvancedPathId || 'web-dev') === path.id;
+            const isStudentPlusChosen = isStudentPlus && path.isAdvancedTrack && isPathAdvanceUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds);
 
             return (
               <div
                 key={path.id}
                 className={`relative p-5 sm:p-6 rounded-3xl border transition-all flex flex-col justify-between group overflow-hidden bg-gradient-to-br ${path.colorTheme.gradient} ${
                   isCurrentActive 
-                    ? `${path.colorTheme.border} ring-2 ring-sky-400/40 shadow-xl` 
-                    : `${path.colorTheme.border} hover:border-white/30 shadow-lg`
+                    ? `${path.colorTheme.border} ring-2 ring-sky-500 shadow-lg` 
+                    : `${path.colorTheme.border} hover:border-slate-300 shadow-sm`
                 }`}
               >
                 {/* Subtle Background Glow */}
-                <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-3xl pointer-events-none group-hover:bg-white/10 transition-colors" />
+                <div className="absolute top-0 right-0 w-48 h-48 bg-white/30 rounded-full blur-3xl pointer-events-none group-hover:bg-white/40 transition-colors" />
 
                 <div>
                   {/* Top Row: Icon, Tag, Badge, Active Pill */}
@@ -176,16 +202,16 @@ export default function LearningPathsHub({
                               <span>Advance</span>
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold text-white/50">
+                            <span className="text-[10px] font-bold text-slate-500">
                               Core
                             </span>
                           )}
 
-                          <span className="text-[10px] font-bold text-white/40">
+                          <span className="text-[10px] font-bold text-slate-400">
                             {path.badge}
                           </span>
                         </div>
-                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight mt-1 group-hover:text-sky-300 transition-colors">
+                        <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight mt-1 group-hover:text-sky-600 transition-colors">
                           {path.title}
                         </h3>
                       </div>
@@ -193,32 +219,44 @@ export default function LearningPathsHub({
 
                     {/* Status Pill */}
                     {isCompleted ? (
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
                         <CheckCircle2 size={12} />
                         <span>Completed</span>
                       </span>
                     ) : isCurrentActive ? (
-                      <span className="bg-sky-500/20 text-sky-300 border border-sky-400/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                      <span className="bg-sky-100 text-sky-800 border border-sky-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
                         <Sparkles size={12} />
                         <span>Active Path</span>
                       </span>
                     ) : isPro ? (
-                      <span className="bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
-                        <Crown size={11} className="fill-amber-400" />
+                      <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                        <Crown size={11} className="fill-amber-500" />
                         <span>PRO Unlocked</span>
                       </span>
                     ) : isStudentPlusChosen ? (
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
-                        <Zap size={11} className="fill-emerald-400" />
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                        <Zap size={11} className="fill-emerald-500" />
                         <span>Advance Unlocked</span>
                       </span>
                     ) : isStudentPlus ? (
-                      <span className="bg-white/10 text-white/70 border border-white/15 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
-                        <Sliders size={11} />
-                        <span>Core Unlocked</span>
+                      path.isAdvancedTrack ? (
+                        <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                          <Lock size={11} />
+                          <span>Advance Locked</span>
+                        </span>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                          <Sliders size={11} />
+                          <span>Core Unlocked</span>
+                        </span>
+                      )
+                    ) : path.isAdvancedTrack ? (
+                      <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                        <Lock size={11} />
+                        <span>Advance Locked</span>
                       </span>
                     ) : (
-                      <span className="bg-white/10 text-white/50 border border-white/10 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
+                      <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 shrink-0">
                         <span>Core Free</span>
                       </span>
                     )}
@@ -226,27 +264,27 @@ export default function LearningPathsHub({
 
                   {/* Subtitle & Description */}
                   <div className="mb-4">
-                    <div className="text-xs font-bold text-white/80 mb-1">
+                    <div className="text-xs font-bold text-slate-800 mb-1">
                       {path.subtitle}
                     </div>
-                    <p className="text-white/60 text-xs sm:text-sm leading-relaxed">
+                    <p className="text-slate-600 text-xs sm:text-sm leading-relaxed">
                       {path.description}
                     </p>
                   </div>
                 </div>
 
                 {/* Progress & Action Button */}
-                <div className="pt-4 border-t border-white/10 space-y-3 mt-auto">
+                <div className="pt-4 border-t border-slate-200/60 space-y-3 mt-auto">
                   {/* Progress Stats */}
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1.5 font-bold">
-                      <span className="text-white/50">Curriculum Mastery</span>
-                      <span className={isCurrentActive ? path.colorTheme.accent : 'text-white/80'}>
+                      <span className="text-slate-500">Curriculum Mastery</span>
+                      <span className={isCurrentActive ? path.colorTheme.accent : 'text-slate-700'}>
                         {doneLessons} / {totalLessons} Lessons ({progressPct}%)
                       </span>
                     </div>
 
-                    <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/5">
+                    <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden p-0.5 border border-slate-300/30">
                       <div
                         className={`h-full rounded-full transition-all duration-500 bg-gradient-to-r ${path.colorTheme.bar}`}
                         style={{ width: `${progressPct}%` }}
@@ -258,25 +296,21 @@ export default function LearningPathsHub({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleSelectTrack(path)}
-                      className={`flex-1 py-3 sm:py-3.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-98 cursor-pointer shadow-lg ${
+                      className={`flex-1 py-3 sm:py-3.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-98 cursor-pointer shadow-sm ${
                         isCurrentActive
-                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-sky-950/40'
-                          : 'bg-white/15 hover:bg-white/25 text-white border border-white/20'
+                          ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white'
+                          : 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200'
                       }`}
                     >
                       <span>{isCurrentActive ? 'Continue Learning' : 'Explore Track'}</span>
                       <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
                     </button>
 
-                    {isStudentPlus && !isPathAdvanceUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, useGameStore.getState().unlockedAdvancedPathIds) && (
+                     {isStudentPlus && !isPathAdvanceUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds) && hasAvailableSlot && (
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          const { studentPlusRenewalCount, unlockedAdvancedPathIds } = useGameStore.getState();
-                          const maxAllowed = 1 + studentPlusRenewalCount;
-                          const currentUnlockedCount = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 ? unlockedAdvancedPathIds.length : 1;
-
-                          const confirmMsg = `🎓 StudentPlus Plan Status:\n\nYour StudentPlus membership allows you to unlock advanced paths (${currentUnlockedCount}/${maxAllowed}). When you renew your StudentPlus subscription, you can unlock more advanced paths!\n\nWould you like to confirm unlocking advance topics for "${path.title}"?`;
+                          const confirmMsg = `🎓 StudentPlus Plan Status:\n\nYour StudentPlus membership allows you to unlock advanced paths (${Math.min(currentUnlockedAdvancedCount + 1, maxAllowed)}/${maxAllowed}).\n\nWould you like to confirm unlocking advance topics for "${path.title}"?`;
                           if (!window.confirm(confirmMsg)) {
                             return;
                           }
@@ -284,10 +318,12 @@ export default function LearningPathsHub({
                           const success = await setStudentPlusAdvancedPath(path.id);
                           if (success) {
                             onSelectPath(path.id);
+                          } else {
+                            onOpenSubscription?.();
                           }
                         }}
                         title="Unlock Advance Topics for this Path"
-                        className="py-3 sm:py-3.5 px-3 rounded-2xl font-black text-[11px] uppercase tracking-wider bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                        className="py-3 sm:py-3.5 px-3 rounded-2xl font-black text-[11px] uppercase tracking-wider bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 animate-bounce"
                       >
                         <Zap size={13} className="fill-emerald-400" />
                         <span>Unlock Advance</span>

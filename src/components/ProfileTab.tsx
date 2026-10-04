@@ -255,32 +255,32 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
         <div className="flex items-center justify-between">
           <button
             onClick={onGoToLearn}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 text-xs font-black uppercase tracking-wider transition-all active:scale-95 group cursor-pointer"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-black uppercase tracking-wider transition-all active:scale-95 group cursor-pointer shadow-sm"
           >
-            <ArrowLeft size={14} className="text-sky-400 group-hover:-translate-x-0.5 transition-transform" />
+            <ArrowLeft size={14} className="text-sky-600 group-hover:-translate-x-0.5 transition-transform" />
             <span>Back to Academy Roadmap</span>
           </button>
 
-          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest hidden sm:inline">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:inline">
             CodeQuest Student Profile
           </span>
         </div>
       )}
 
       {/* Main Student Identity Card */}
-      <div className="bg-gradient-to-b from-[#181A26] to-[#11121A] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden space-y-6">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden space-y-6 text-slate-800">
         {/* Ambient background glow */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-sky-500/20 via-indigo-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-sky-500/10 via-indigo-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 relative z-10 text-center sm:text-left">
           {/* Avatar with Customizer Button & Level Tag */}
           <div className="relative group shrink-0">
-            <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-tr ${THEME_GRADIENTS[activeThemeIdx].bg} flex items-center justify-center text-5xl sm:text-6xl shadow-[0_10px_30px_rgba(14,165,233,0.35)] border-4 border-white/20 select-none transition-transform group-hover:scale-105 duration-200`}>
+            <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-tr ${THEME_GRADIENTS[activeThemeIdx].bg} flex items-center justify-center text-5xl sm:text-6xl shadow-[0_8px_20px_rgba(14,165,233,0.15)] border-4 border-white select-none transition-transform group-hover:scale-105 duration-200`}>
               {avatarIcon || '👾'}
             </div>
 
             {/* Level Tag on Avatar */}
-            <div className="absolute -top-2.5 -left-2.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-amber-950 font-black text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full border-2 border-[#181A26] shadow-md flex items-center gap-1">
+            <div className="absolute -top-2.5 -left-2.5 bg-gradient-to-r from-yellow-400 to-amber-500 text-amber-950 font-black text-[10px] sm:text-[11px] px-2.5 py-0.5 rounded-full border-2 border-white shadow-md flex items-center gap-1">
               <Star size={11} className="fill-amber-950" />
               <span>LVL {level}</span>
             </div>
@@ -288,10 +288,10 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
             {/* Change Avatar Emoji Button */}
             <button
               onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-              className="absolute -bottom-2 -right-2 bg-[#202334] hover:bg-[#2A2E44] border-2 border-white/20 text-white p-2 rounded-xl transition-all shadow-xl active:scale-95 cursor-pointer group-hover:border-sky-400"
+              className="absolute -bottom-2 -right-2 bg-slate-100 hover:bg-slate-200 border-2 border-white text-slate-700 p-2 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer group-hover:border-sky-400"
               title="Change Avatar Emoji"
             >
-              <Edit3 size={14} className="text-sky-300" />
+              <Edit3 size={14} className="text-sky-600" />
             </button>
           </div>
 
@@ -299,9 +299,9 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
           <div className="flex-1 min-w-0">
             {isEditingProfile ? (
               /* Profile Edit Form */
-              <div className="space-y-3.5 bg-black/40 border border-sky-500/30 p-4 sm:p-5 rounded-2xl animate-in fade-in">
+              <div className="space-y-3.5 bg-slate-50 border border-slate-200 p-4 sm:p-5 rounded-2xl animate-in fade-in">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase text-sky-400 tracking-wider">
+                  <span className="text-xs font-black uppercase text-sky-700 tracking-wider">
                     Edit Your Student Profile
                   </span>
                   <button
@@ -310,14 +310,14 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                       setEditError(null);
                       setIsEditingProfile(false);
                     }}
-                    className="text-white/40 hover:text-white p-1"
+                    className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                   >
                     <X size={15} />
                   </button>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black uppercase text-white/50 mb-1">
+                  <label className="block text-[11px] font-black uppercase text-slate-500 mb-1">
                     Username
                   </label>
                   <input
@@ -326,21 +326,21 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                     onChange={(e) => setEditUsername(e.target.value)}
                     maxLength={20}
                     placeholder="Enter desired username"
-                    className="w-full bg-white/5 border border-white/15 focus:border-sky-400 rounded-xl px-3.5 py-2 text-sm font-bold text-white focus:outline-none"
+                    className="w-full bg-white border border-slate-200 focus:border-sky-400 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-800 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black uppercase text-white/50 mb-1">
+                  <label className="block text-[11px] font-black uppercase text-slate-500 mb-1">
                     Career Focus & Goal
                   </label>
                   <select
                     value={editCareerGoal || 'Full-Stack Developer'}
                     onChange={(e) => setEditCareerGoal(e.target.value)}
-                    className="w-full bg-[#1A1C28] border border-white/15 focus:border-sky-400 rounded-xl px-3.5 py-2 text-sm font-bold text-white focus:outline-none"
+                    className="w-full bg-white border border-slate-200 focus:border-sky-400 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-800 focus:outline-none"
                   >
                     {CAREER_GOALS.map((goal) => (
-                      <option key={goal} value={goal} className="bg-[#1A1C28] text-white">
+                      <option key={goal} value={goal} className="bg-white text-slate-800">
                         {goal}
                       </option>
                     ))}
@@ -348,7 +348,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black uppercase text-white/50 mb-1">
+                  <label className="block text-[11px] font-black uppercase text-slate-500 mb-1">
                     Bio & Learning Status
                   </label>
                   <input
@@ -357,13 +357,13 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                     onChange={(e) => setEditBio(e.target.value)}
                     maxLength={100}
                     placeholder="What are you mastering right now?"
-                    className="w-full bg-white/5 border border-white/15 focus:border-sky-400 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none"
+                    className="w-full bg-white border border-slate-200 focus:border-sky-400 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none"
                   />
                 </div>
 
                 {editError && (
-                  <div className="bg-rose-500/15 border border-rose-500/30 p-2.5 rounded-xl text-xs text-rose-300 font-bold flex items-center gap-2">
-                    <AlertCircle size={14} className="shrink-0" />
+                  <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl text-xs text-rose-800 font-bold flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0 text-rose-600" />
                     <span>{editError}</span>
                   </div>
                 )}
@@ -372,7 +372,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                   <button
                     onClick={handleSaveProfile}
                     disabled={isSaving}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md cursor-pointer active:scale-95 disabled:opacity-50"
+                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95 disabled:opacity-50"
                   >
                     {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                     <span>Save Changes</span>
@@ -383,7 +383,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                       setEditError(null);
                       setIsEditingProfile(false);
                     }}
-                    className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white/70 font-bold text-xs uppercase cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -393,7 +393,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
               /* Normal View Profile */
               <div>
                 <div className="flex items-center gap-2.5 mb-1 justify-center sm:justify-start flex-wrap">
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                     {username || 'CodeExplorer'}
                   </h2>
                   <button
@@ -402,10 +402,10 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                       setEditError(null);
                       setIsEditingProfile(true);
                     }}
-                    className="bg-white/5 hover:bg-white/15 border border-white/10 text-sky-400 hover:text-sky-300 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                    className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-sky-700 px-2.5 py-1 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
                     title="Edit Profile Information"
                   >
-                    <Edit3 size={13} />
+                    <Edit3 size={13} className="text-sky-600" />
                     <span>Edit Profile</span>
                   </button>
                 </div>
@@ -426,22 +426,22 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                     </span>
                   )}
 
-                  <span className="text-xs font-black uppercase tracking-wider text-sky-300 bg-sky-500/15 border border-sky-400/30 px-3 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-sky-700 bg-sky-100 border border-sky-200 px-3 py-0.5 rounded-full flex items-center gap-1">
                     <span>{currentTitle.icon}</span>
                     <span>{currentTitle.title}</span>
                   </span>
 
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 px-3 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-200 px-3 py-0.5 rounded-full flex items-center gap-1">
                     {renderLeagueBadgeIcon(leagueId || 'bronze', 13)}
                     <span>{(leagueId || 'bronze').toUpperCase()} LEAGUE</span>
                   </span>
                 </div>
 
                 {/* Goal & Bio info */}
-                <p className="text-white/80 text-xs font-semibold mb-1">
+                <p className="text-slate-800 text-xs font-black mb-1">
                   🎯 Focus: {editCareerGoal}
                 </p>
-                <p className="text-white/50 text-xs italic mb-4 max-w-lg leading-relaxed">
+                <p className="text-slate-500 text-xs italic mb-4 max-w-lg leading-relaxed">
                   "{editBio}"
                 </p>
 
@@ -449,9 +449,9 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                   <button
                     onClick={handleShareProfile}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
                   >
-                    <Share2 size={13} className="text-sky-400" />
+                    <Share2 size={13} className="text-sky-600" />
                     <span>Share Stats Card</span>
                   </button>
 
@@ -460,17 +460,17 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                       onClick={onOpenSubscription}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95 ${
                         isPro 
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' 
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200' 
                           : 'bg-gradient-to-r from-amber-500 to-yellow-500 text-amber-950 hover:brightness-110'
                       }`}
                     >
-                      <Crown size={13} className={isPro ? 'text-amber-400 fill-amber-400' : 'fill-amber-950'} />
+                      <Crown size={13} className={isPro ? 'text-amber-700 fill-amber-700' : 'fill-amber-950'} />
                       <span>{isPro ? 'Manage PRO Pass' : 'Get CodeQuest PRO'}</span>
                     </button>
                   )}
 
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
-                    <Shield size={13} />
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-bold shadow-sm">
+                    <Shield size={13} className="text-emerald-600" />
                     <span>Enrolled CodeQuest Scholar</span>
                   </div>
                 </div>
@@ -481,14 +481,14 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
 
         {/* Avatar Picker Drawer */}
         {showAvatarPicker && (
-          <div className="pt-6 border-t border-white/10 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="pt-6 border-t border-slate-200 animate-in fade-in slide-in-from-top-4 duration-200">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-black uppercase tracking-wider text-white/60">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-500">
                 Choose your avatar character
               </p>
               <button
                 onClick={() => setShowAvatarPicker(false)}
-                className="text-xs text-white/40 hover:text-white cursor-pointer"
+                className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 Close
               </button>
@@ -501,8 +501,8 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                   onClick={() => handleSelectAvatar(emoji)}
                   className={`w-11 h-11 rounded-2xl flex items-center justify-center text-2xl transition-all border cursor-pointer ${
                     avatarIcon === emoji
-                      ? 'bg-sky-500/30 border-sky-400 scale-110 shadow-lg ring-2 ring-sky-400/40'
-                      : 'bg-white/5 border-white/10 hover:bg-white/10 hover:scale-105'
+                      ? 'bg-sky-50 border-sky-400 scale-110 shadow-sm ring-2 ring-sky-400/20'
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:scale-105'
                   }`}
                 >
                   {emoji}
@@ -510,7 +510,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
               ))}
             </div>
 
-            <p className="text-[11px] font-bold uppercase tracking-wider text-white/40 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
               Avatar Aura Theme
             </p>
             <div className="flex flex-wrap gap-2">
@@ -520,8 +520,8 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
                   onClick={() => setActiveThemeIdx(i)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
                     activeThemeIdx === i
-                      ? 'bg-white/15 border-white/30 text-white shadow-md'
-                      : 'bg-white/5 border-white/10 text-white/50 hover:text-white'
+                      ? 'bg-slate-100 border-slate-300 text-slate-800 shadow-sm'
+                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100'
                   }`}
                 >
                   <div className={`w-3.5 h-3.5 rounded-full bg-gradient-to-tr ${thm.bg}`} />
@@ -536,74 +536,74 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
       {/* Grid of Key Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {/* Total XP */}
-        <div className="bg-[#141622] border border-white/10 rounded-3xl p-4 sm:p-5 shadow-lg space-y-1">
-          <div className="flex items-center justify-between text-yellow-400">
-            <span className="text-[10px] font-black uppercase tracking-wider">Total XP</span>
-            <Zap size={16} className="fill-yellow-400" />
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-yellow-600">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total XP</span>
+            <Zap size={16} className="fill-yellow-500" />
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white tabular-nums">{xp}</p>
-          <span className="text-[10px] text-white/40 block">Cumulative mastery</span>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{xp}</p>
+          <span className="text-[10px] text-slate-400 block">Cumulative mastery</span>
         </div>
 
         {/* Weekly XP */}
-        <div className="bg-[#141622] border border-white/10 rounded-3xl p-4 sm:p-5 shadow-lg space-y-1">
-          <div className="flex items-center justify-between text-amber-400">
-            <span className="text-[10px] font-black uppercase tracking-wider">Weekly XP</span>
-            <Trophy size={16} />
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-amber-600">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Weekly XP</span>
+            <Trophy size={16} className="fill-amber-100" />
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white tabular-nums">{weeklyXp || 0}</p>
-          <span className="text-[10px] text-white/40 block">This week's score</span>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{weeklyXp || 0}</p>
+          <span className="text-[10px] text-slate-400 block">This week's score</span>
         </div>
 
         {/* Day Streak */}
-        <div className="bg-[#141622] border border-white/10 rounded-3xl p-4 sm:p-5 shadow-lg space-y-1">
-          <div className="flex items-center justify-between text-orange-400">
-            <span className="text-[10px] font-black uppercase tracking-wider">Daily Streak</span>
-            <Flame size={16} className="fill-orange-400" />
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-orange-600">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Daily Streak</span>
+            <Flame size={16} className="fill-orange-500 text-orange-500" />
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white tabular-nums">{streak} Days</p>
-          <span className="text-[10px] text-white/40 block">Continuous study</span>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{streak} Days</p>
+          <span className="text-[10px] text-slate-400 block">Continuous study</span>
         </div>
 
         {/* Lessons Completed */}
-        <div className="bg-[#141622] border border-white/10 rounded-3xl p-4 sm:p-5 shadow-lg space-y-1">
-          <div className="flex items-center justify-between text-sky-400">
-            <span className="text-[10px] font-black uppercase tracking-wider">Lessons</span>
-            <BookOpen size={16} />
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm space-y-1">
+          <div className="flex items-center justify-between text-sky-600">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Lessons</span>
+            <BookOpen size={16} className="text-sky-500" />
           </div>
-          <p className="text-xl sm:text-2xl font-black text-white tabular-nums">{completedCount}</p>
-          <span className="text-[10px] text-white/40 block">{completionPercentage}% of syllabus</span>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{completedCount}</p>
+          <span className="text-[10px] text-slate-400 block">{completionPercentage}% of syllabus</span>
         </div>
       </div>
 
       {/* Level XP Mastery Progress Card */}
-      <div className="bg-gradient-to-br from-[#161824] to-[#12131C] border border-sky-500/20 rounded-3xl p-6 shadow-xl relative overflow-hidden space-y-3">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-yellow-400 to-amber-500 flex items-center justify-center text-amber-950 shadow-md shrink-0">
               <Sparkles size={20} className="fill-amber-950" />
             </div>
             <div>
-              <h3 className="font-black text-white text-base leading-none">
+              <h3 className="font-black text-slate-900 text-base leading-none">
                 Level {level} Progress
               </h3>
-              <p className="text-white/40 text-xs mt-1">
+              <p className="text-slate-500 text-xs mt-1">
                 {currentTitle.desc}
               </p>
             </div>
           </div>
 
           <div className="text-left sm:text-right">
-            <span className="text-base font-black text-sky-400 tabular-nums">
-              {xpIntoLevel} <span className="text-white/40 text-xs">/ 1,000 XP</span>
+            <span className="text-base font-black text-sky-600 tabular-nums">
+              {xpIntoLevel} <span className="text-slate-400 text-xs">/ 1,000 XP</span>
             </span>
-            <p className="text-[10px] font-bold text-white/40 uppercase">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">
               {xpNeededForNext} XP to Level {level + 1}
             </p>
           </div>
         </div>
 
-        <div className="w-full h-3 bg-black/40 rounded-full overflow-hidden p-0.5 border border-white/5">
+        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
           <div 
             className="h-full bg-gradient-to-r from-sky-400 to-blue-500 rounded-full transition-all duration-500" 
             style={{ width: `${progressPercent}%` }} 
@@ -612,33 +612,33 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
       </div>
 
       {/* Membership & Subscription Status Card */}
-      <div className="bg-[#141622] border border-white/10 rounded-3xl p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-slate-800">
         <div className="flex items-center gap-3.5">
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-lg shrink-0 ${
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shadow-md shrink-0 ${
             subscriptionTier === 'pro' 
               ? 'bg-gradient-to-tr from-amber-400 to-yellow-400 text-amber-950' 
               : subscriptionTier === 'student_plus'
               ? 'bg-gradient-to-tr from-emerald-400 to-teal-400 text-emerald-950'
-              : 'bg-white/10 text-white/70'
+              : 'bg-slate-100 text-slate-600 border border-slate-200'
           }`}>
             {subscriptionTier === 'pro' ? <Crown size={24} className="fill-amber-950" /> : subscriptionTier === 'student_plus' ? <Zap size={24} className="fill-emerald-950" /> : <Shield size={24} />}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h4 className="font-black text-white text-base">
+              <h4 className="font-black text-slate-900 text-base">
                 {subscriptionTier === 'pro' ? 'CodeQuest PRO VIP Plan' : subscriptionTier === 'student_plus' ? 'StudentPlus Membership' : 'Basic Free Plan'}
               </h4>
               <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
                 subscriptionTier === 'pro' 
-                  ? 'bg-amber-400 text-amber-950' 
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200' 
                   : subscriptionTier === 'student_plus'
-                  ? 'bg-emerald-400 text-emerald-950'
-                  : 'bg-white/10 text-white/60'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
               }`}>
                 {subscriptionTier === 'pro' ? 'Active PRO' : subscriptionTier === 'student_plus' ? `Active (${unlockedCount}/${maxAllowedTracks} Tracks)` : 'Free Tier'}
               </span>
             </div>
-            <p className="text-white/60 text-xs mt-0.5">
+            <p className="text-slate-500 text-xs mt-0.5">
               {subscriptionTier === 'pro' 
                 ? 'All 6 Career Tracks • Infinite Hearts • 2X Double XP' 
                 : subscriptionTier === 'student_plus'
@@ -651,13 +651,13 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
         {onOpenSubscription && (
           <button
             onClick={onOpenSubscription}
-            className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md shrink-0 flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm shrink-0 flex items-center gap-1.5 ${
               subscriptionTier === 'basic' || !subscriptionTier
-                ? 'bg-gradient-to-r from-emerald-400 to-teal-500 text-emerald-950 hover:brightness-110'
-                : 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white hover:brightness-110'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
             }`}
           >
-            <Crown size={14} className={subscriptionTier === 'basic' || !subscriptionTier ? 'fill-emerald-950' : 'text-amber-400'} />
+            <Crown size={14} className={subscriptionTier === 'basic' || !subscriptionTier ? 'text-white fill-white' : 'text-amber-500'} />
             <span>{subscriptionTier === 'basic' || !subscriptionTier ? 'Upgrade Plan' : 'Manage Subscription'}</span>
           </button>
         )}
@@ -666,16 +666,16 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
       {/* Achievements & Badges Showcase */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black text-white flex items-center gap-2">
-            <Award size={20} className="text-yellow-400" />
+          <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+            <Award size={20} className="text-yellow-500" />
             <span>Academy Badges</span>
           </h3>
 
-          <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl">
+          <div className="flex p-1 bg-slate-100 border border-slate-200 rounded-xl">
             <button
               onClick={() => setBadgeFilter('all')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                badgeFilter === 'all' ? 'bg-white/15 text-white shadow' : 'text-white/40 hover:text-white'
+                badgeFilter === 'all' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               All
@@ -683,7 +683,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
             <button
               onClick={() => setBadgeFilter('unlocked')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                badgeFilter === 'unlocked' ? 'bg-white/15 text-white shadow' : 'text-white/40 hover:text-white'
+                badgeFilter === 'unlocked' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               Unlocked
@@ -691,7 +691,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
             <button
               onClick={() => setBadgeFilter('locked')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                badgeFilter === 'locked' ? 'bg-white/15 text-white shadow' : 'text-white/40 hover:text-white'
+                badgeFilter === 'locked' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               Locked
@@ -705,25 +705,25 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
               key={badge.id}
               className={`p-4 rounded-3xl border transition-all flex flex-col justify-between ${
                 badge.unlocked
-                  ? `bg-gradient-to-br ${badge.color} shadow-lg`
-                  : 'bg-white/[0.02] border-white/5 opacity-60'
+                  ? 'bg-white border-slate-200 shadow-sm hover:border-slate-300'
+                  : 'bg-slate-50 border-slate-100 opacity-60'
               }`}
             >
               <div className="flex items-start gap-3 mb-3">
                 <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-inner shrink-0 ${
-                  badge.unlocked ? 'bg-black/40 border border-white/15' : 'bg-white/5 border border-white/5'
+                  badge.unlocked ? 'bg-slate-100 border border-slate-200' : 'bg-slate-100 border border-slate-100'
                 }`}>
-                  {badge.unlocked ? badge.icon : <Lock size={20} className="text-white/30" />}
+                  {badge.unlocked ? badge.icon : <Lock size={20} className="text-slate-400" />}
                 </div>
                 <div>
-                  <h4 className="font-bold text-white text-sm">{badge.title}</h4>
-                  <p className="text-white/50 text-xs mt-0.5 leading-relaxed">{badge.desc}</p>
+                  <h4 className="font-bold text-slate-900 text-sm">{badge.title}</h4>
+                  <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{badge.desc}</p>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-bold">
-                <span className="text-white/40">{badge.progress}</span>
-                <span className="text-yellow-400">+{badge.xpReward} XP</span>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold">
+                <span className="text-slate-500">{badge.progress}</span>
+                <span className="text-yellow-600 font-extrabold">+{badge.xpReward} XP</span>
               </div>
             </div>
           ))}

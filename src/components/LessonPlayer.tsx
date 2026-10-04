@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Heart, CheckCircle2, AlertCircle, ArrowRight, Sparkles, Trophy, 
   Zap, HelpCircle, BookOpen, Lightbulb, ChevronDown, ChevronUp, Layers,
-  Terminal, Code2
+  Terminal, Code2, Lock
 } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +11,7 @@ import NoHeartsModal from './NoHeartsModal';
 import { sounds } from '../lib/sound';
 import { LESSON_CONCEPTS } from '../data/lessonConcepts';
 import LessonConceptBriefing from './LessonConceptBriefing';
+import { isLessonQuizUnlockedForUser, findModuleAndPathForLesson, getPathMeta } from '../data/learningPaths';
 
 interface LessonPlayerProps {
   lesson: Lesson;
@@ -20,10 +21,66 @@ interface LessonPlayerProps {
 }
 
 export default function LessonPlayer({ lesson, initialMode = 'briefing', onExit, onComplete }: LessonPlayerProps) {
-  const { hearts, loseHeart, completeLesson, doubleXpUntil } = useGameStore();
+  const { 
+    hearts, 
+    loseHeart, 
+    completeLesson, 
+    doubleXpUntil, 
+    completedLessons, 
+    subscriptionTier, 
+    unlockedAdvancedPathId, 
+    unlockedAdvancedPathIds, 
+    setStudentPlusAdvancedPath 
+  } = useGameStore();
+
+  const quizUnlockStatus = isLessonQuizUnlockedForUser(
+    lesson.id,
+    completedLessons,
+    subscriptionTier,
+    unlockedAdvancedPathId,
+    unlockedAdvancedPathIds
+  );
+
+  const handleStartExercises = async () => {
+    if (!quizUnlockStatus.unlocked) {
+      if (quizUnlockStatus.reason === 'advance_locked') {
+        if (subscriptionTier === 'student_plus') {
+          const { pathId } = findModuleAndPathForLesson(lesson.id);
+          const meta = getPathMeta(pathId);
+          const confirmMsg = `🎓 Unlock Advance Track:\n\nWould you like to select "${meta.title}" as your StudentPlus unlocked track to attempt its quizzes?`;
+          if (window.confirm(confirmMsg)) {
+            const success = await setStudentPlusAdvancedPath(pathId);
+            if (success) {
+              setViewMode('exercises');
+              return;
+            }
+          }
+        } else {
+          alert('🔒 Advance Track Locked: Upgrade to StudentPlus or CodeQuest PRO to attempt quizzes on advance topics!');
+        }
+      } else {
+        alert('🔒 Quiz Sequentially Locked: Complete preceding topics in sequence first to unlock quiz challenges!');
+      }
+      return;
+    }
+
+    if (hearts <= 0 && subscriptionTier !== 'pro') {
+      alert('💔 No Hearts Remaining: Refill your hearts in the store or wait for heart regeneration to attempt quizzes!');
+      return;
+    }
+
+    setViewMode('exercises');
+  };
   const [currentIdx, setCurrentIdx] = useState(0);
   const [viewMode, setViewMode] = useState<'briefing' | 'exercises'>(initialMode);
   const [showInlineConcept, setShowInlineConcept] = useState(false);
+
+  // Safeguard: Automatically redirect to 'briefing' if quiz is locked
+  useEffect(() => {
+    if (!quizUnlockStatus.unlocked && viewMode === 'exercises') {
+      setViewMode('briefing');
+    }
+  }, [quizUnlockStatus.unlocked, viewMode]);
   
   const isDoubleXp = Boolean(doubleXpUntil && Date.now() < doubleXpUntil);
   const fileExt = lesson.id.startsWith('css') ? 'style.css' : lesson.id.startsWith('php') ? 'server.php' : 'index.html';
@@ -317,15 +374,21 @@ export default function LessonPlayer({ lesson, initialMode = 'briefing', onExit,
             <span>Theory</span>
           </button>
           <button
-            onClick={() => setViewMode('exercises')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all ${
+            onClick={handleStartExercises}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               viewMode === 'exercises'
                 ? 'bg-blue-600 text-white shadow-md'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
+                : !quizUnlockStatus.unlocked 
+                  ? 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
             }`}
           >
-            <Zap size={13} className={`sm:size-[14px] ${viewMode === 'exercises' ? 'text-amber-300 fill-amber-300' : ''}`} />
-            <span>Quiz ({currentIdx + 1}/{totalExercises})</span>
+            {!quizUnlockStatus.unlocked ? (
+              <Lock size={12} className="text-amber-400 shrink-0" />
+            ) : (
+              <Zap size={13} className={`sm:size-[14px] ${viewMode === 'exercises' ? 'text-amber-300 fill-amber-300' : ''}`} />
+            )}
+            <span>Quiz {!quizUnlockStatus.unlocked ? '(Locked)' : `(${currentIdx + 1}/${totalExercises})`}</span>
           </button>
         </div>
 
@@ -345,7 +408,9 @@ export default function LessonPlayer({ lesson, initialMode = 'briefing', onExit,
             <LessonConceptBriefing
               lessonTitle={lesson.title}
               concept={concept}
-              onStartExercises={() => setViewMode('exercises')}
+              onStartExercises={handleStartExercises}
+              isLocked={!quizUnlockStatus.unlocked}
+              lockReason={quizUnlockStatus.reason}
             />
           </div>
         </main>

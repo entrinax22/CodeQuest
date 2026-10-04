@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Code, X, Search, ChevronRight, Sparkles, CheckCircle2, 
-  Layers, Lightbulb, AlertTriangle, ArrowRight, Eye 
+  Layers, Lightbulb, AlertTriangle, ArrowRight, Eye, Lock 
 } from 'lucide-react';
 import { Lesson, Module } from '../data/curriculum';
 import { LESSON_CONCEPTS, TeachingConcept } from '../data/lessonConcepts';
-import { PATHS_METADATA, getPathModules, getAllLessonsGlobally } from '../data/learningPaths';
+import { PATHS_METADATA, getPathModules, getAllLessonsGlobally, isLessonQuizUnlockedForUser } from '../data/learningPaths';
 import LessonConceptBriefing from './LessonConceptBriefing';
 
 interface CurriculumHandbookModalProps {
@@ -14,6 +14,11 @@ interface CurriculumHandbookModalProps {
   onSelectLesson: (lesson: Lesson, mode: 'briefing' | 'exercises') => void;
   completedLessons: string[];
   activePathId?: string;
+  subscriptionTier?: string;
+  unlockedAdvancedPathId?: string | null;
+  unlockedAdvancedPathIds?: string[] | null;
+  onOpenSubscription?: () => void;
+  onUnlockAdvanceTrack?: (pathId: string) => void;
 }
 
 export default function CurriculumHandbookModal({
@@ -21,7 +26,12 @@ export default function CurriculumHandbookModal({
   onClose,
   onSelectLesson,
   completedLessons,
-  activePathId = 'web-dev'
+  activePathId = 'web-dev',
+  subscriptionTier = 'basic',
+  unlockedAdvancedPathId,
+  unlockedAdvancedPathIds,
+  onOpenSubscription,
+  onUnlockAdvanceTrack
 }: CurriculumHandbookModalProps) {
   const [selectedPathId, setSelectedPathId] = useState<string>(activePathId);
   const [selectedModuleId, setSelectedModuleId] = useState<string>('');
@@ -76,6 +86,44 @@ export default function CurriculumHandbookModal({
     || (currentModule ? currentModule.lessons[0] : pathLessons[0]);
 
   const activeConcept: TeachingConcept | undefined = activeLesson ? LESSON_CONCEPTS[activeLesson.id] : undefined;
+
+  const quizUnlockStatus = activeLesson ? isLessonQuizUnlockedForUser(
+    activeLesson.id,
+    completedLessons,
+    subscriptionTier,
+    unlockedAdvancedPathId,
+    unlockedAdvancedPathIds
+  ) : { unlocked: true };
+
+  const handleStartQuizClick = (lesson: Lesson) => {
+    const status = isLessonQuizUnlockedForUser(
+      lesson.id,
+      completedLessons,
+      subscriptionTier,
+      unlockedAdvancedPathId,
+      unlockedAdvancedPathIds
+    );
+
+    if (!status.unlocked) {
+      if (status.reason === 'advance_locked') {
+        if (subscriptionTier === 'student_plus' && onUnlockAdvanceTrack) {
+          onClose();
+          onUnlockAdvanceTrack(selectedPathId);
+        } else if (onOpenSubscription) {
+          onClose();
+          onOpenSubscription();
+        } else {
+          alert('🔒 Advance Track Locked: Upgrade your plan or select this track as your StudentPlus path to attempt quizzes!');
+        }
+      } else {
+        alert('🔒 Quiz Sequentially Locked: Complete preceding topics in this track first to unlock this quiz!');
+      }
+      return;
+    }
+
+    onClose();
+    onSelectLesson(lesson, 'exercises');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -235,14 +283,16 @@ export default function CurriculumHandbookModal({
                       Lesson Guide
                     </button>
                     <button
-                      onClick={() => {
-                        onClose();
-                        onSelectLesson(activeLesson, 'exercises');
-                      }}
-                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-1.5"
+                      onClick={() => handleStartQuizClick(activeLesson)}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                        !quizUnlockStatus.unlocked
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30 hover:bg-amber-500/30'
+                          : 'bg-blue-600 hover:bg-blue-500'
+                      }`}
                     >
-                      <span>Start Quiz</span>
-                      <ArrowRight size={14} />
+                      {!quizUnlockStatus.unlocked && <Lock size={13} />}
+                      <span>{!quizUnlockStatus.unlocked ? 'Quiz Locked' : 'Start Quiz'}</span>
+                      {quizUnlockStatus.unlocked && <ArrowRight size={14} />}
                     </button>
                   </div>
                 </div>
@@ -252,10 +302,7 @@ export default function CurriculumHandbookModal({
                   <LessonConceptBriefing
                     lessonTitle={activeLesson.title}
                     concept={activeConcept}
-                    onStartExercises={() => {
-                      onClose();
-                      onSelectLesson(activeLesson, 'exercises');
-                    }}
+                    onStartExercises={() => handleStartQuizClick(activeLesson)}
                   />
                 ) : (
                   <div className="p-8 text-center text-white/50 text-xs">
