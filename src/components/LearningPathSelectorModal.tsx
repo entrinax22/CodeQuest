@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, Check, ArrowRight, Sparkles, Trophy, BookOpen, Layers, Crown, Lock, Zap, Sliders } from 'lucide-react';
 import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser } from '../data/learningPaths';
 import { useGameStore } from '../store/useGameStore';
@@ -31,22 +31,6 @@ export default function LearningPathSelectorModal({
   const unlockedCount = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 ? unlockedAdvancedPathIds.length : 1;
 
   const handleTrackClick = (path: PathMeta) => {
-    const isUnlocked = isPathUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds);
-
-    if (!isUnlocked) {
-      if (isStudentPlus) {
-        setStudentPlusAdvancedPath(path.id);
-        onSelectPath(path.id);
-        onClose();
-        return;
-      }
-      if (onOpenSubscription) {
-        onClose();
-        onOpenSubscription();
-      }
-      return;
-    }
-
     sounds.playCorrect();
     onSelectPath(path.id);
     onClose();
@@ -167,7 +151,11 @@ export default function LearningPathSelectorModal({
                       ) : (
                         <button
                           type="button"
-                          className="px-3 py-1 rounded-xl bg-white/10 group-hover:bg-white/20 text-white/80 group-hover:text-white text-xs font-bold transition-all flex items-center gap-1 shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleTrackClick(path);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white/10 group-hover:bg-white/20 text-white/80 group-hover:text-white text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                         >
                           <span>Switch</span>
                           <ArrowRight size={13} />

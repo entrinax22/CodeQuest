@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useGameStore } from '../store/useGameStore';
 import { 
   Mail, Lock, Loader2, Sparkles, User, Check, AlertCircle, 
   Eye, EyeOff, CheckCircle2, ShieldCheck, ArrowRight, ArrowLeft, KeyRound
@@ -137,6 +138,8 @@ export default function Auth() {
         }
       }
 
+      useGameStore.getState().resetStore();
+
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: emailToAuthenticate,
         password: loginPassword,
@@ -201,6 +204,9 @@ export default function Auth() {
         throw new Error(`The username "${usernameTrimmed}" is already registered. Please choose another.`);
       }
 
+      // Clear any previous session state from browser storage before creating new account
+      useGameStore.getState().resetStore();
+
       const { data, error: signupError } = await supabase.auth.signUp({
         email: emailTrimmed,
         password: registerPassword,
@@ -215,7 +221,7 @@ export default function Auth() {
 
       if (signupError) throw signupError;
 
-      // Update / Upsert profile with username & email
+      // Update / Upsert profile with username, email & default basic tier
       if (data?.user) {
         try {
           await supabase.from('profiles').upsert({
@@ -229,6 +235,14 @@ export default function Auth() {
             hearts: 5,
             streak: 1,
             level: 1,
+            completed_lessons: [],
+            subscription_tier: 'basic',
+            is_pro: false,
+            role: emailTrimmed === 'mark.entrina12@gmail.com' ? 'admin' : 'user',
+            unlocked_advanced_path_id: 'web-dev',
+            unlocked_advanced_path_ids: ['web-dev'],
+            student_plus_path_locked: false,
+            student_plus_renewal_count: 0
           });
         } catch {}
       }

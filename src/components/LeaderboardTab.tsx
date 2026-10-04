@@ -7,6 +7,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useGameStore } from '../store/useGameStore';
 import { sounds } from '../lib/sound';
+import PullToRefresh from './PullToRefresh';
 
 interface LeaderboardUser {
   id: string;
@@ -154,7 +155,7 @@ export default function LeaderboardTab() {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [evalResultToast, setEvalResultToast] = useState<string | null>(null);
   const [rewardClaimed, setRewardClaimed] = useState<boolean>(() => {
-    return localStorage.getItem('codequest_weekly_reward_claimed') === 'true';
+    return username ? localStorage.getItem(`codequest_weekly_reward_claimed_${username}`) === 'true' : false;
   });
 
   // Keep currentLeague view in sync whenever user's leagueId changes
@@ -175,35 +176,37 @@ export default function LeaderboardTab() {
 
     const activeLeagueConfig = LEAGUES[currentLeague];
 
-    // Try fetching users matching the active league tier
-    const { data: leagueProfiles, error: leagueErr } = await supabase
+    // Fetch profiles and strictly filter users that belong to active league tier
+    const { data: allProfiles, error } = await supabase
       .from('profiles')
       .select('id, username, xp, weekly_xp, league_id, rank_change')
-      .eq('league_id', activeLeagueConfig.id)
       .order('xp', { ascending: false })
-      .limit(30);
+      .limit(100);
 
-    if (!leagueErr && leagueProfiles && leagueProfiles.length > 0) {
-      setUsers(leagueProfiles.map((u, i) => ({
+    if (!error && allProfiles) {
+      const matchingUsers = allProfiles.filter(u => {
+        const uXp = u.xp || 0;
+        const uLeague = (u.league_id || '').toLowerCase();
+
+        // Compute ground-truth league tier based on XP
+        let computedLeague = 'bronze';
+        if (uXp >= 10000) computedLeague = 'diamond';
+        else if (uXp >= 5000) computedLeague = 'platinum';
+        else if (uXp >= 2500) computedLeague = 'gold';
+        else if (uXp >= 1000) computedLeague = 'silver';
+        else computedLeague = 'bronze';
+
+        // 0 XP users are strictly Bronze; otherwise validate league_id
+        const finalLeague = uXp === 0 ? 'bronze' : (uLeague || computedLeague);
+
+        return finalLeague === activeLeagueConfig.id;
+      });
+
+      setUsers(matchingUsers.map((u, i) => ({
         ...u,
         rank: i + 1,
         change: (u.rank_change as any) || (Math.random() > 0.8 ? 'up' : Math.random() > 0.8 ? 'down' : 'none')
       })));
-    } else {
-      // Fallback to top users across all profiles
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, username, xp, weekly_xp, league_id, rank_change')
-        .order('xp', { ascending: false })
-        .limit(30);
-
-      if (!error && data) {
-        setUsers(data.map((u, i) => ({
-          ...u,
-          rank: i + 1,
-          change: (u.rank_change as any) || (Math.random() > 0.8 ? 'up' : Math.random() > 0.8 ? 'down' : 'none')
-        })));
-      }
     }
     setLoading(false);
   };
@@ -211,9 +214,11 @@ export default function LeaderboardTab() {
   const handleClaimReward = () => {
     sounds.playFanfare();
     setRewardClaimed(true);
-    localStorage.setItem('codequest_weekly_reward_claimed', 'true');
-    setEvalResultToast(`🎉 Claimed ${LEAGUES[userLeagueIdx].rewards}!`);
-    setTimeout(() => setEvalResultToast(null), 4000);
+    if (username) {
+      localStorage.setItem(`codequest_weekly_reward_claimed_${username}`, 'true');
+    }
+    setEvalResultToast(`Claimed ${LEAGUES[userLeagueIdx].name} Rewards! 🎉`);
+    setTimeout(() => setEvalResultToast(null), 3000);
   };
 
   const handleTriggerWeeklyEvaluation = async () => {
@@ -232,15 +237,29 @@ export default function LeaderboardTab() {
 
   const activeLeague = LEAGUES[currentLeague];
 
+  const handleRefreshLeaderboard = async () => {
+    const sessionRes = await supabase?.auth.getSession();
+    if (sessionRes?.data?.session?.user) {
+      await useGameStore.getState().syncWithSupabase(sessionRes.data.session.user.id);
+    }
+    await fetchLeaderboard();
+  };
+
   return (
-    <div className="max-w-2xl lg:max-w-3xl mx-auto py-6 sm:py-8 px-2 sm:px-4 pb-28 text-left space-y-6 sm:space-y-7 animate-in fade-in duration-300">
-      {/* Toast Notification for Weekly Evaluation Results */}
-      {evalResultToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white text-xs font-black px-5 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 border border-white/20 animate-bounce max-w-md text-center">
-          <Sparkles size={16} className="text-yellow-300 fill-yellow-300 shrink-0" />
-          <span>{evalResultToast}</span>
-        </div>
-      )}
+    <PullToRefresh onRefresh={handleRefreshLeaderboard} label="league rankings">
+      <div className="max-w-2xl lg:max-w-3xl mx-auto py-6 sm:py-8 px-2 sm:px-4 pb-28 text-left space-y-6 sm:space-y-7 animate-in fade-in duration-300">
+        {/* Full-width Responsive Rectangular Toast Notification for Weekly Evaluation Results */}
+        {evalResultToast && (
+          <div className="fixed top-16 left-2 right-2 sm:left-4 sm:right-4 md:max-w-3xl md:mx-auto z-50 bg-[#181926]/98 text-sky-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-sky-400/40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 text-xs sm:text-sm font-bold leading-snug">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Sparkles size={18} className="text-yellow-300 fill-yellow-300 shrink-0" />
+              <span className="whitespace-normal break-words">{evalResultToast}</span>
+            </div>
+            <button onClick={() => setEvalResultToast(null)} className="text-sky-300/60 hover:text-sky-200 text-xs font-bold shrink-0 cursor-pointer">
+              Dismiss
+            </button>
+          </div>
+        )}
 
       {/* User Current Tier Status Pill */}
       <div className="flex items-center justify-between bg-[#14151C] border border-white/10 p-3.5 sm:p-4 rounded-2xl shadow-lg">
@@ -506,5 +525,6 @@ export default function LeaderboardTab() {
         <div className="flex-1 h-1 bg-rose-500/30 rounded-full" />
       </div>
     </div>
+    </PullToRefresh>
   );
 }

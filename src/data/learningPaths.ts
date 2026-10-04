@@ -70,7 +70,7 @@ export const PATHS_METADATA: PathMeta[] = [
     iconEmoji: '☕',
     badge: '5 Modules • 16 Lessons',
     tag: 'Java Enterprise',
-    isAdvancedTrack: false,
+    isAdvancedTrack: true,
     colorTheme: {
       gradient: 'from-orange-500/20 via-red-600/10 to-orange-950/40',
       border: 'border-orange-500/30',
@@ -88,7 +88,7 @@ export const PATHS_METADATA: PathMeta[] = [
     iconEmoji: '⚡',
     badge: '5 Modules • 16 Lessons',
     tag: 'C++ Systems',
-    isAdvancedTrack: false,
+    isAdvancedTrack: true,
     colorTheme: {
       gradient: 'from-blue-500/20 via-indigo-600/10 to-blue-950/40',
       border: 'border-blue-500/30',
@@ -106,7 +106,7 @@ export const PATHS_METADATA: PathMeta[] = [
     iconEmoji: '🗄️',
     badge: '5 Modules • 15 Lessons',
     tag: 'Backend Architect',
-    isAdvancedTrack: false,
+    isAdvancedTrack: true,
     colorTheme: {
       gradient: 'from-emerald-500/20 via-teal-600/10 to-green-950/40',
       border: 'border-emerald-500/30',
@@ -124,7 +124,7 @@ export const PATHS_METADATA: PathMeta[] = [
     iconEmoji: '☁️',
     badge: '5 Modules • 15 Lessons',
     tag: 'Cloud & Kubernetes',
-    isAdvancedTrack: false,
+    isAdvancedTrack: true,
     colorTheme: {
       gradient: 'from-purple-500/20 via-pink-600/10 to-purple-950/40',
       border: 'border-purple-500/30',
@@ -145,6 +145,16 @@ export const PATH_MODULES_MAP: Record<string, Module[]> = {
 };
 
 export function isPathUnlockedForUser(
+  _pathId: string, 
+  _subscriptionTier?: string, 
+  _unlockedAdvancedPathId?: string | null,
+  _unlockedAdvancedPathIds?: string[] | null
+): boolean {
+  // All learning paths are 100% open for all users to explore and learn core modules
+  return true;
+}
+
+export function isPathAdvanceUnlockedForUser(
   pathId: string, 
   subscriptionTier: string, 
   unlockedAdvancedPathId?: string | null,
@@ -159,7 +169,7 @@ export function isPathUnlockedForUser(
       : [unlockedAdvancedPathId || 'web-dev'];
     return list.includes(pathId);
   }
-  return true;
+  return false;
 }
 
 export function isModuleUnlockedForUser(

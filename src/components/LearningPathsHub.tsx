@@ -4,7 +4,7 @@ import {
   Layers, Code, ChevronRight, Flame, Zap, Crown, Lock, Check,
   Sliders, Star, Award
 } from 'lucide-react';
-import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser } from '../data/learningPaths';
+import { PATHS_METADATA, PathMeta, getPathModules, isPathUnlockedForUser, isPathAdvanceUnlockedForUser } from '../data/learningPaths';
 import { useGameStore } from '../store/useGameStore';
 import { sounds } from '../lib/sound';
 
@@ -34,28 +34,6 @@ export default function LearningPathsHub({
   const hasChosenAdvanced = isStudentPlus && studentPlusPathLocked && unlockedAdvancedPathId !== 'web-dev';
 
   const handleSelectTrack = (path: PathMeta) => {
-    const isUnlocked = isPathUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId);
-
-    if (!isUnlocked) {
-      if (isStudentPlus) {
-        const { studentPlusPathLocked, unlockedAdvancedPathId: currentLocked } = useGameStore.getState();
-        if (studentPlusPathLocked && currentLocked !== 'web-dev' && currentLocked !== path.id) {
-          sounds.playWrong();
-          const lockedMeta = PATHS_METADATA.find(p => p.id === currentLocked);
-          alert(`Your StudentPlus subscription includes 1 permanent advanced path choice. Your account is permanently locked to "${lockedMeta?.title || currentLocked}". Upgrade to CodeQuest PRO to unlock all 6 tracks simultaneously!`);
-          return;
-        }
-
-        setStudentPlusAdvancedPath(path.id);
-        onSelectPath(path.id);
-        return;
-      }
-      if (onOpenSubscription) {
-        onOpenSubscription();
-      }
-      return;
-    }
-
     sounds.playCorrect();
     onSelectPath(path.id);
   };
@@ -290,17 +268,29 @@ export default function LearningPathsHub({
                       <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
                     </button>
 
-                    {isStudentPlus && !isStudentPlusChosen && (
+                    {isStudentPlus && !isPathAdvanceUnlockedForUser(path.id, subscriptionTier, unlockedAdvancedPathId, useGameStore.getState().unlockedAdvancedPathIds) && (
                       <button
-                        onClick={() => {
-                          setStudentPlusAdvancedPath(path.id);
-                          onSelectPath(path.id);
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const { studentPlusRenewalCount, unlockedAdvancedPathIds } = useGameStore.getState();
+                          const maxAllowed = 1 + studentPlusRenewalCount;
+                          const currentUnlockedCount = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 ? unlockedAdvancedPathIds.length : 1;
+
+                          const confirmMsg = `🎓 StudentPlus Plan Status:\n\nYour StudentPlus membership allows you to unlock advanced paths (${currentUnlockedCount}/${maxAllowed}). When you renew your StudentPlus subscription, you can unlock more advanced paths!\n\nWould you like to confirm unlocking advance topics for "${path.title}"?`;
+                          if (!window.confirm(confirmMsg)) {
+                            return;
+                          }
+
+                          const success = await setStudentPlusAdvancedPath(path.id);
+                          if (success) {
+                            onSelectPath(path.id);
+                          }
                         }}
                         title="Unlock Advance Topics for this Path"
                         className="py-3 sm:py-3.5 px-3 rounded-2xl font-black text-[11px] uppercase tracking-wider bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/40 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
                       >
                         <Zap size={13} className="fill-emerald-400" />
-                        <span>Set as 1-Track</span>
+                        <span>Unlock Advance</span>
                       </button>
                     )}
                   </div>

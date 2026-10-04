@@ -5,10 +5,22 @@ import { sounds } from '../lib/sound';
 
 // 12 minutes per heart -> 5 hearts = 60 minutes = 1 hour total refill time
 export const HEART_REFILL_INTERVAL_MS = 12 * 60 * 1000;
+export const PRACTICE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes cooldown for practice arena
 export const MAX_HEARTS = 5;
 
 export type SubscriptionTier = 'basic' | 'student_plus' | 'pro' | 'free';
 export type PlanCycle = 'monthly' | 'yearly';
+
+const getTodayDateStr = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const getYesterdayDateStr = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 interface GameState {
   xp: number;
@@ -17,11 +29,16 @@ interface GameState {
   rankChange: 'up' | 'down' | 'none';
   hearts: number;
   streak: number;
+  lastStreakDate: string | null;
   level: number;
   completedLessons: string[];
   lastHeartLostAt: number | null;
+  lastPracticeAt: number | null;
+  recordPracticeCompletion: () => void;
   username: string;
   avatarIcon: string;
+  careerGoal: string;
+  bio: string;
   soundEnabled: boolean;
   isSyncing: boolean;
   streakFreezesCount: number;
@@ -40,7 +57,7 @@ interface GameState {
   studentPlusPathLocked: boolean;
 
   setActivePath: (pathId: string) => void;
-  setStudentPlusAdvancedPath: (pathId: string) => Promise<void>;
+  setStudentPlusAdvancedPath: (pathId: string) => Promise<boolean>;
   setLeagueId: (leagueId: 'bronze' | 'silver' | 'gold' | 'diamond') => void;
   addXp: (amount: number) => Promise<void>;
   loseHeart: () => Promise<void>;
@@ -54,8 +71,9 @@ interface GameState {
   buyDoubleXpBoost: () => Promise<boolean>;
   upgradeToPro: (tier: SubscriptionTier, planCycle?: PlanCycle) => Promise<void>;
   cancelSubscription: () => Promise<void>;
-  updateProfile: (username: string, avatarIcon?: string) => Promise<void>;
+  updateProfile: (username: string, avatarIcon?: string, careerGoal?: string, bio?: string) => Promise<void>;
   toggleSound: () => void;
+  resetStore: () => void;
   evaluateWeeklyLeagues: () => Promise<{
     promoted: boolean;
     demoted: boolean;
@@ -75,11 +93,15 @@ export const useGameStore = create<GameState>()(
       rankChange: 'none',
       hearts: 5,
       streak: 1,
+      lastStreakDate: null,
       level: 1,
       completedLessons: [],
       lastHeartLostAt: null,
+      lastPracticeAt: null,
       username: 'CodeExplorer',
       avatarIcon: '👾',
+      careerGoal: 'Full-Stack Developer',
+      bio: 'Leveling up my software engineering skills on CodeQuest Academy.',
       soundEnabled: true,
       isSyncing: false,
       streakFreezesCount: 0,
@@ -101,7 +123,7 @@ export const useGameStore = create<GameState>()(
         set({ activePathId: pathId });
       },
 
-      setStudentPlusAdvancedPath: async (pathId: string) => {
+      setStudentPlusAdvancedPath: async (pathId: string): Promise<boolean> => {
         const { subscriptionTier, unlockedAdvancedPathIds, studentPlusRenewalCount } = get();
         const maxAllowed = 1 + studentPlusRenewalCount;
         const currentUnlocked = unlockedAdvancedPathIds && unlockedAdvancedPathIds.length > 0 
@@ -111,13 +133,13 @@ export const useGameStore = create<GameState>()(
         if (currentUnlocked.includes(pathId)) {
           set({ unlockedAdvancedPathId: pathId });
           sounds.playCorrect();
-          return;
+          return true;
         }
 
         if (subscriptionTier === 'student_plus' && currentUnlocked.length >= maxAllowed) {
           sounds.playWrong();
           alert(`You have reached your limit of ${maxAllowed} advanced path(s) for StudentPlus. Renew your StudentPlus subscription to unlock +1 more path!`);
-          return;
+          return false;
         }
 
         const newUnlocked = Array.from(new Set([...currentUnlocked, pathId]));
@@ -140,6 +162,7 @@ export const useGameStore = create<GameState>()(
             }
           } catch {}
         }
+        return true;
       },
 
       setLeagueId: (leagueId: 'bronze' | 'silver' | 'gold' | 'diamond') => {
@@ -203,7 +226,7 @@ export const useGameStore = create<GameState>()(
         try {
           let { data, error } = await supabase
             .from('profiles')
-            .select('xp, hearts, streak, level, completed_lessons, username, league_id, weekly_xp, rank_change, is_pro, subscription_tier, subscription_expires_at, unlocked_advanced_path_id, student_plus_path_locked, role')
+            .select('xp, hearts, streak, level, completed_lessons, username, league_id, weekly_xp, rank_change, is_pro, subscription_tier, subscription_expires_at, unlocked_advanced_path_id, student_plus_path_locked, role, career_goal, bio')
             .eq('id', userId)
             .single();
 
@@ -219,45 +242,67 @@ export const useGameStore = create<GameState>()(
             error = fallback.error;
           }
 
-          if (profileRecord && !error) {
-            const mergedCompleted = Array.from(new Set([
-              ...get().completedLessons,
-              ...(profileRecord.completed_lessons || [])
-            ]));
-            const resolvedXp = Math.max(get().xp, profileRecord.xp || 0);
-            const resolvedLevel = Math.max(get().level, Math.floor(resolvedXp / 1000) + 1);
-            const resolvedWeeklyXp = profileRecord.weekly_xp !== undefined && profileRecord.weekly_xp !== null 
-              ? profileRecord.weekly_xp 
-              : get().weeklyXp;
-            const resolvedLeague = (profileRecord.league_id as any) || get().leagueId || 'bronze';
-            const resolvedRankChange = (profileRecord.rank_change as any) || get().rankChange || 'none';
-            
-            // Robust subscription tier resolution: prioritize active local paid tier
-            let resolvedSubTier: SubscriptionTier = 'basic';
-            const cloudTier = profileRecord.subscription_tier as SubscriptionTier | undefined;
-            const localTier = get().subscriptionTier;
-            const cloudIsPro = profileRecord.is_pro !== undefined ? Boolean(profileRecord.is_pro) : false;
-            const localIsPro = get().isPro;
+          if (!profileRecord) {
+            // Initial row creation in Supabase for authenticated user if record doesn't exist yet
+            const { data: authData } = await supabase.auth.getUser();
+            const email = authData?.user?.email;
+            const isAdminEmail = email === 'mark.entrina12@gmail.com';
+            const initialRole: 'admin' | 'user' = isAdminEmail ? 'admin' : 'user';
 
-            if (localTier && localTier !== 'basic' && localTier !== 'free') {
-              resolvedSubTier = localTier;
-            } else if (cloudTier && cloudTier !== 'basic' && cloudTier !== 'free') {
-              resolvedSubTier = cloudTier;
-            } else if (localIsPro || cloudIsPro) {
-              resolvedSubTier = 'student_plus';
-            } else {
-              resolvedSubTier = 'basic';
-            }
+            const newProfilePayload = {
+              id: userId,
+              username: get().username || 'CodeExplorer',
+              xp: get().xp || 0,
+              weekly_xp: get().weeklyXp || 0,
+              streak: get().streak || 1,
+              level: get().level || 1,
+              hearts: get().hearts || 5,
+              league_id: get().leagueId || 'bronze',
+              career_goal: get().careerGoal || 'Full-Stack Developer',
+              bio: get().bio || 'Leveling up my software engineering skills on CodeQuest Academy.',
+              completed_lessons: get().completedLessons || [],
+              role: initialRole
+            };
+
+            await supabase.from('profiles').upsert([newProfilePayload]);
+            set({ role: initialRole, isSyncing: false });
+            return;
+          }
+
+          if (profileRecord) {
+            const localCompleted = get().completedLessons || [];
+            const dbCompleted = Array.isArray(profileRecord.completed_lessons) ? profileRecord.completed_lessons : [];
+            const resolvedCompleted = Array.from(new Set([...localCompleted, ...dbCompleted]));
+
+            const localXp = get().xp || 0;
+            const dbXp = profileRecord.xp ?? 0;
+            const resolvedXp = Math.max(localXp, dbXp);
+
+            const localWeeklyXp = get().weeklyXp || 0;
+            const dbWeeklyXp = profileRecord.weekly_xp ?? 0;
+            const resolvedWeeklyXp = Math.max(localWeeklyXp, dbWeeklyXp);
+
+            const resolvedLevel = Math.floor(resolvedXp / 1000) + 1;
+            const resolvedLeague = (profileRecord.league_id as any) || 'bronze';
+            const resolvedRankChange = (profileRecord.rank_change as any) || 'none';
+
+            const localStreak = get().streak || 1;
+            const dbStreak = profileRecord.streak ?? 1;
+            const resolvedStreak = Math.max(localStreak, dbStreak);
+            
+            // Cloud database profile is the authoritative source of truth for subscription tier & role
+            const cloudTier = profileRecord.subscription_tier as SubscriptionTier | undefined;
+            const resolvedSubTier: SubscriptionTier = cloudTier || 'basic';
 
             const resolvedIsPro = resolvedSubTier === 'student_plus' || resolvedSubTier === 'pro';
-            const resolvedExpiresAt = profileRecord.subscription_expires_at || get().subscriptionExpiresAt;
-            const resolvedAdvancedPath = profileRecord.unlocked_advanced_path_id || get().unlockedAdvancedPathId || 'web-dev';
+            const resolvedExpiresAt = profileRecord.subscription_expires_at || null;
+            const resolvedAdvancedPath = profileRecord.unlocked_advanced_path_id || 'web-dev';
             const resolvedPathLocked = profileRecord.student_plus_path_locked !== undefined 
               ? Boolean(profileRecord.student_plus_path_locked) 
               : (resolvedAdvancedPath !== 'web-dev');
 
-            // Compute hearts: local regenerated hearts must NOT be wiped out by stale cloud 0
-            let currentHearts = resolvedIsPro ? MAX_HEARTS : Math.max(get().hearts, profileRecord.hearts ?? 0);
+            // Compute hearts & timer
+            let currentHearts = resolvedIsPro ? MAX_HEARTS : Math.max(0, Math.min(MAX_HEARTS, profileRecord.hearts ?? get().hearts ?? MAX_HEARTS));
             let currentLostAt = get().lastHeartLostAt ? Number(get().lastHeartLostAt) : null;
 
             if (resolvedIsPro) {
@@ -274,18 +319,18 @@ export const useGameStore = create<GameState>()(
               }
             } else if (currentHearts >= MAX_HEARTS) {
               currentLostAt = null;
-            } else if (!currentLostAt) {
-              currentLostAt = Date.now();
             }
 
             const resolvedHearts = currentHearts;
             const resolvedLastLostAt = currentLostAt;
-            const resolvedUsername = profileRecord.username || get().username || 'CodeExplorer';
+            const resolvedUsername = profileRecord.username || 'CodeExplorer';
+            const resolvedCareerGoal = profileRecord.career_goal || 'Full-Stack Developer';
+            const resolvedBio = profileRecord.bio || 'Leveling up my software engineering skills on CodeQuest Academy.';
 
             const { data: authData } = await supabase.auth.getUser();
             const email = authData?.user?.email;
             const isAdminEmail = email === 'mark.entrina12@gmail.com';
-            const resolvedRole: 'admin' | 'user' = isAdminEmail ? 'admin' : (profileRecord.role || get().role || 'user');
+            const resolvedRole: 'admin' | 'user' = isAdminEmail ? 'admin' : (profileRecord.role === 'admin' ? 'admin' : 'user');
 
             set({ 
               xp: resolvedXp, 
@@ -293,11 +338,13 @@ export const useGameStore = create<GameState>()(
               leagueId: resolvedLeague,
               rankChange: resolvedRankChange,
               hearts: resolvedHearts, 
-              streak: Math.max(get().streak, profileRecord.streak || 1), 
+              streak: resolvedStreak, 
               level: resolvedLevel,
-              completedLessons: mergedCompleted,
+              completedLessons: resolvedCompleted,
               lastHeartLostAt: resolvedLastLostAt,
               username: resolvedUsername,
+              careerGoal: resolvedCareerGoal,
+              bio: resolvedBio,
               isPro: resolvedIsPro,
               subscriptionTier: resolvedSubTier,
               subscriptionExpiresAt: resolvedExpiresAt,
@@ -307,19 +354,24 @@ export const useGameStore = create<GameState>()(
               isSyncing: false 
             });
 
-            // Update cloud if local had more progress
+            // Sync merged authoritative state back to Supabase via upsert
             try {
-              await supabase.from('profiles').update({
+              await supabase.from('profiles').upsert([{
+                id: userId,
+                username: resolvedUsername,
                 xp: resolvedXp,
                 weekly_xp: resolvedWeeklyXp,
                 league_id: resolvedLeague,
                 level: resolvedLevel,
-                completed_lessons: mergedCompleted,
+                completed_lessons: resolvedCompleted,
                 hearts: resolvedHearts,
+                streak: resolvedStreak,
                 is_pro: resolvedIsPro,
                 subscription_tier: resolvedSubTier,
                 role: resolvedRole,
-              }).eq('id', userId);
+                career_goal: resolvedCareerGoal,
+                bio: resolvedBio
+              }]);
             } catch {
               // Ignore background update errors
             }
@@ -431,34 +483,82 @@ export const useGameStore = create<GameState>()(
       },
 
       completeLesson: async (lessonId: string) => {
-        const { completedLessons, xp, streak, addXp } = get();
-        if (!completedLessons.includes(lessonId)) {
-          const newCompleted = [...completedLessons, lessonId];
-          const newStreak = streak + 1;
-          set({ 
-            completedLessons: newCompleted,
-            streak: newStreak
-          });
-          
-          await addXp(100);
+        const { completedLessons, streak, lastStreakDate, streakFreezesCount, addXp } = get();
 
-          if (supabase) {
-            try {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase.from('profiles').update({
-                  completed_lessons: newCompleted,
-                  streak: newStreak
-                }).eq('id', user.id);
-              }
-            } catch {
-              // Ignore offline sync errors
-            }
-          }
+        const today = getTodayDateStr();
+        const yesterday = getYesterdayDateStr();
+
+        let newStreak = streak;
+        let newFreezes = streakFreezesCount;
+        let newStreakDate = lastStreakDate;
+
+        if (!lastStreakDate) {
+          newStreak = Math.max(1, streak);
+          newStreakDate = today;
+        } else if (lastStreakDate === today) {
+          // Already completed a lesson today; streak maintained!
+          newStreakDate = today;
+        } else if (lastStreakDate === yesterday) {
+          // Day-to-day continuous streak
+          newStreak = streak + 1;
+          newStreakDate = today;
         } else {
-          // Practice completion awards standard practice XP
-          await addXp(25);
+          // Missed 1 or more days
+          if (streakFreezesCount > 0) {
+            newFreezes = streakFreezesCount - 1;
+            newStreak = streak + 1;
+            newStreakDate = today;
+          } else {
+            newStreak = 1;
+            newStreakDate = today;
+          }
         }
+
+        const isNewCompletion = !completedLessons.includes(lessonId);
+        const newCompleted = isNewCompletion ? [...completedLessons, lessonId] : completedLessons;
+
+        set({ 
+          completedLessons: newCompleted,
+          streak: newStreak,
+          lastStreakDate: newStreakDate,
+          streakFreezesCount: newFreezes
+        });
+        
+        await addXp(isNewCompletion ? 100 : 25);
+
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              await supabase.from('profiles').upsert([{
+                id: user.id,
+                username: get().username || 'CodeExplorer',
+                completed_lessons: newCompleted,
+                streak: newStreak,
+                xp: get().xp,
+                weekly_xp: get().weeklyXp,
+                level: get().level
+              }]);
+
+              try {
+                await supabase.from('user_lesson_completions').upsert([{
+                  user_id: user.id,
+                  lesson_id: lessonId,
+                  path_id: get().activePathId || 'web-dev',
+                  xp_earned: isNewCompletion ? 100 : 25
+                }], { onConflict: 'user_id,lesson_id' });
+              } catch {
+                // Optional granular log fallback
+              }
+            }
+          } catch {
+            // Ignore offline sync errors
+          }
+        }
+      },
+
+      recordPracticeCompletion: () => {
+        set({ lastPracticeAt: Date.now() });
       },
 
       buyHeartRefill: async () => {
@@ -576,7 +676,12 @@ export const useGameStore = create<GameState>()(
           subscriptionTier: 'basic',
           subscriptionPlanCycle: null,
           subscriptionExpiresAt: null,
+          unlockedAdvancedPathIds: ['web-dev'],
+          unlockedAdvancedPathId: 'web-dev',
+          studentPlusRenewalCount: 0,
         });
+
+        sounds.playWrong();
 
         if (supabase) {
           try {
@@ -586,25 +691,68 @@ export const useGameStore = create<GameState>()(
                 is_pro: false,
                 subscription_tier: 'basic',
                 subscription_expires_at: null,
+                unlocked_advanced_path_id: 'web-dev',
+                unlocked_advanced_path_ids: ['web-dev'],
+                student_plus_renewal_count: 0,
               }).eq('id', user.id);
             }
           } catch {}
         }
       },
 
-      updateProfile: async (newUsername: string, newAvatar?: string) => {
+      updateProfile: async (newUsername: string, newAvatar?: string, newCareerGoal?: string, newBio?: string) => {
         const updates: Partial<GameState> = { username: newUsername };
         if (newAvatar) updates.avatarIcon = newAvatar;
+        if (newCareerGoal !== undefined) updates.careerGoal = newCareerGoal;
+        if (newBio !== undefined) updates.bio = newBio;
         set(updates);
 
         if (supabase) {
           try {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-              await supabase.from('profiles').update({ username: newUsername }).eq('id', user.id);
+              const payload: any = { username: newUsername };
+              if (newCareerGoal !== undefined) payload.career_goal = newCareerGoal;
+              if (newBio !== undefined) payload.bio = newBio;
+              await supabase.from('profiles').update(payload).eq('id', user.id);
             }
           } catch {}
         }
+      },
+
+      resetStore: () => {
+        set({
+          xp: 0,
+          weeklyXp: 0,
+          leagueId: 'bronze',
+          rankChange: 'none',
+          hearts: MAX_HEARTS,
+          streak: 1,
+          lastStreakDate: null,
+          level: 1,
+          completedLessons: [],
+          lastHeartLostAt: null,
+          username: 'CodeExplorer',
+          avatarIcon: '👾',
+          careerGoal: 'Full-Stack Developer',
+          bio: 'Leveling up my software engineering skills on CodeQuest Academy.',
+          streakFreezesCount: 0,
+          doubleXpUntil: null,
+          activePathId: 'web-dev',
+          isPro: false,
+          subscriptionTier: 'basic',
+          subscriptionPlanCycle: null,
+          subscriptionExpiresAt: null,
+          unlockedAdvancedPathId: 'web-dev',
+          unlockedAdvancedPathIds: ['web-dev'],
+          studentPlusRenewalCount: 0,
+          studentPlusPathLocked: false,
+          role: 'user',
+        });
+        localStorage.removeItem('codequest_is_admin');
+        try {
+          localStorage.removeItem('codequest-game-storage');
+        } catch {}
       },
 
       evaluateWeeklyLeagues: async () => {

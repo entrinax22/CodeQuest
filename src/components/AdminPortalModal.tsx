@@ -14,8 +14,9 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
   const { username } = useGameStore();
   const [activeTab, setActiveTab] = useState<'pending' | 'qr_config'>('pending');
 
-  const userEmail = session?.user?.email || 'mark.entrina12@gmail.com';
-  const isAdmin = userEmail === 'mark.entrina12@gmail.com' || localStorage.getItem('codequest_is_admin') === 'true';
+  const userEmail = session?.user?.email || '';
+  const { role } = useGameStore();
+  const isAdmin = userEmail === 'mark.entrina12@gmail.com' || role === 'admin';
 
   // QR Config state stored in localStorage
   const [qrConfig, setQrConfig] = useState(() => {
@@ -31,10 +32,56 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
   });
 
   // Pending payments state
-  const [pendingPayments, setPendingPayments] = useState<any[]>(() => {
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+
+  const fetchPayments = async () => {
+    let localPayments: any[] = [];
     const saved = localStorage.getItem('codequest_pending_payments');
-    return saved ? JSON.parse(saved) : [];
-  });
+    if (saved) {
+      try {
+        localPayments = JSON.parse(saved);
+      } catch {}
+    }
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('payment_approvals')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          const dbMapped = data.map(item => ({
+            id: item.id,
+            username: item.username,
+            tier: item.tier,
+            cycle: item.cycle,
+            method: item.method,
+            refNumber: item.reference_number,
+            timestamp: new Date(item.created_at).getTime(),
+            status: item.status
+          }));
+
+          // Merge local and db without duplicates based on refNumber
+          const mergedMap = new Map<string, any>();
+          localPayments.forEach(p => mergedMap.set(p.refNumber, p));
+          dbMapped.forEach(p => mergedMap.set(p.refNumber, p));
+
+          setPendingPayments(Array.from(mergedMap.values()));
+          return;
+        }
+      } catch (err) {
+        console.error('Error fetching payments:', err);
+      }
+    }
+    setPendingPayments(localPayments);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchPayments();
+    }
+  }, [isOpen]);
 
   const [toast, setToast] = useState<string | null>(null);
 
@@ -89,6 +136,26 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
     const payment = pendingPayments.find(p => p.id === paymentId);
     if (!payment) return;
 
+    if (supabase) {
+      try {
+        // 1. Update payment status in Supabase table
+        await supabase
+          .from('payment_approvals')
+          .update({ status: 'approved', updated_at: new Date().toISOString() })
+          .eq('id', paymentId);
+
+        // 2. Grant subscription status in Profiles table
+        const expiryDate = new Date(Date.now() + (payment.cycle === 'monthly' ? 30 : 365) * 24 * 60 * 60 * 1000).toISOString();
+        await supabase.from('profiles').update({
+          is_pro: true,
+          subscription_tier: payment.tier,
+          subscription_expires_at: expiryDate,
+        }).eq('username', payment.username);
+      } catch (err) {
+        console.warn('Could not update profile or payment status in supabase:', err);
+      }
+    }
+
     const updated = pendingPayments.map(p => {
       if (p.id === paymentId) {
         return { ...p, status: 'approved' };
@@ -98,13 +165,24 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
     setPendingPayments(updated);
     localStorage.setItem('codequest_pending_payments', JSON.stringify(updated));
 
-    // Also upgrade user in store if it's the current user
-    // (In full production, this would trigger server-side activation)
+    window.dispatchEvent(new CustomEvent('codequest_subscription_approved', { detail: payment }));
+
     sounds.playFanfare();
-    showToast(`Payment approved! Subscription upgraded to ${payment.tier.toUpperCase()}. 🎉`);
+    showToast(`Payment approved for @${payment.username}! Upgraded to ${payment.tier.toUpperCase()} 🎉`);
   };
 
-  const handleRejectPayment = (paymentId: string) => {
+  const handleRejectPayment = async (paymentId: string) => {
+    if (supabase) {
+      try {
+        await supabase
+          .from('payment_approvals')
+          .update({ status: 'rejected', updated_at: new Date().toISOString() })
+          .eq('id', paymentId);
+      } catch (err) {
+        console.error('Error rejecting payment in Supabase:', err);
+      }
+    }
+
     const updated = pendingPayments.map(p => {
       if (p.id === paymentId) {
         return { ...p, status: 'rejected' };
@@ -130,19 +208,10 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
           <p className="text-white/60 text-xs leading-relaxed">
             Your account ({userEmail}) does not have administrator privileges. Only authorized admin role users can access the QR configuration and manual approval portal.
           </p>
-          <div className="pt-2 flex items-center justify-center gap-2">
-            <button
-              onClick={() => {
-                localStorage.setItem('codequest_is_admin', 'true');
-                window.location.reload();
-              }}
-              className="px-4 py-2 rounded-xl bg-sky-500 text-black font-bold text-xs uppercase cursor-pointer hover:bg-sky-400"
-            >
-              Simulate Admin Role (Demo)
-            </button>
+          <div className="pt-2 flex items-center justify-center">
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-white/10 text-white font-bold text-xs cursor-pointer hover:bg-white/20"
+              className="px-5 py-2.5 rounded-xl bg-white/10 text-white font-bold text-xs cursor-pointer hover:bg-white/20"
             >
               Close
             </button>
@@ -176,11 +245,16 @@ export default function AdminPortalModal({ isOpen, onClose, session }: AdminPort
           </button>
         </div>
 
-        {/* Toast */}
+        {/* Full-width Toast Notification */}
         {toast && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-sky-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-1.5 border border-white/20">
-            <Check size={13} className="text-emerald-300" />
-            <span>{toast}</span>
+          <div className="absolute top-16 left-2 right-2 sm:left-4 sm:right-4 z-50 bg-[#181926]/98 text-sky-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-sky-400/40 backdrop-blur-md text-xs sm:text-sm font-bold leading-snug animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Check size={18} className="text-emerald-400 shrink-0" />
+              <span className="whitespace-normal break-words">{toast}</span>
+            </div>
+            <button onClick={() => setToast(null)} className="text-sky-300/60 hover:text-sky-200 text-xs font-bold shrink-0 cursor-pointer">
+              Dismiss
+            </button>
           </div>
         )}
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Heart, X, CheckCircle2, AlertCircle, ArrowRight, Zap, HelpCircle } from 'lucide-react';
-import { useGameStore } from '../store/useGameStore';
+import { useGameStore, PRACTICE_COOLDOWN_MS } from '../store/useGameStore';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface PracticeSessionProps {
@@ -30,16 +30,33 @@ const PRACTICE_QUESTIONS = [
 ];
 
 export default function PracticeSession({ onExit, onSuccess }: PracticeSessionProps) {
-  const { earnHeart } = useGameStore();
+  const { earnHeart, lastPracticeAt, recordPracticeCompletion } = useGameStore();
+
+  const [cooldownLeftMs, setCooldownLeftMs] = useState<number>(() => {
+    if (!lastPracticeAt) return 0;
+    const elapsed = Date.now() - Number(lastPracticeAt);
+    return Math.max(0, PRACTICE_COOLDOWN_MS - elapsed);
+  });
 
   React.useEffect(() => {
     const checkRefill = useGameStore.getState().checkHeartRefill;
     checkRefill();
-    const interval = setInterval(() => {
+
+    const tick = () => {
       useGameStore.getState().checkHeartRefill();
-    }, 1000);
+      if (lastPracticeAt) {
+        const elapsed = Date.now() - Number(lastPracticeAt);
+        const remaining = Math.max(0, PRACTICE_COOLDOWN_MS - elapsed);
+        setCooldownLeftMs(remaining);
+      } else {
+        setCooldownLeftMs(0);
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [lastPracticeAt]);
 
   const [questionIdx] = useState(() => Math.floor(Math.random() * PRACTICE_QUESTIONS.length));
   const [selected, setSelected] = useState<string | null>(null);
@@ -57,6 +74,7 @@ export default function PracticeSession({ onExit, onSuccess }: PracticeSessionPr
   const handleContinue = async () => {
     if (isEvaluated === true) {
       await earnHeart();
+      recordPracticeCompletion();
       setIsFinished(true);
     } else {
       // Free retry in practice!
@@ -64,6 +82,45 @@ export default function PracticeSession({ onExit, onSuccess }: PracticeSessionPr
       setSelected(null);
     }
   };
+
+  if (cooldownLeftMs > 0) {
+    const cdMinutes = Math.floor(cooldownLeftMs / 60000);
+    const cdSeconds = Math.floor((cooldownLeftMs % 60000) / 1000);
+    const cdFormatted = `${cdMinutes.toString().padStart(2, '0')}:${cdSeconds.toString().padStart(2, '0')}`;
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0B] text-white px-6 text-center">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="max-w-md w-full bg-[#121316] border border-amber-500/30 rounded-3xl p-8 shadow-2xl space-y-6"
+        >
+          <div className="w-20 h-20 bg-amber-500/15 rounded-3xl flex items-center justify-center mx-auto border border-amber-500/30">
+            <Zap size={44} className="text-amber-400 fill-amber-400 animate-pulse" />
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black tracking-tight text-white">Practice Arena Cooldown</h2>
+            <p className="text-white/60 text-xs sm:text-sm leading-relaxed">
+              You recently completed a practice session! To keep practice meaningful, the arena opens every 15 minutes.
+            </p>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 font-mono">
+            <span className="text-[10px] uppercase font-black tracking-widest text-white/40 block mb-1">Next Practice Unlocks In</span>
+            <span className="text-3xl font-black text-amber-400 tabular-nums">{cdFormatted}</span>
+          </div>
+
+          <button
+            onClick={onExit}
+            className="w-full bg-white/10 hover:bg-white/20 text-white font-black py-3.5 rounded-2xl transition-all text-xs uppercase tracking-wider cursor-pointer"
+          >
+            Return to Learning Path
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (isFinished) {
     return (

@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { CURRICULUM } from '../data/curriculum';
 import { renderLeagueBadgeIcon } from './LeaderboardTab';
 import { sounds } from '../lib/sound';
+import PullToRefresh from './PullToRefresh';
 
 interface ProfileTabProps {
   session: any;
@@ -42,7 +43,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
   const { 
     xp, weeklyXp, leagueId, hearts, streak, level, completedLessons, 
     username, avatarIcon, updateProfile, isPro, subscriptionTier,
-    unlockedAdvancedPathIds, studentPlusRenewalCount 
+    unlockedAdvancedPathIds, studentPlusRenewalCount, careerGoal, bio 
   } = useGameStore();
 
   const maxAllowedTracks = 1 + studentPlusRenewalCount;
@@ -51,19 +52,15 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
   // Editing state
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editUsername, setEditUsername] = useState(() => username || 'CodeExplorer');
-  const [editCareerGoal, setEditCareerGoal] = useState(() => {
-    return localStorage.getItem('codequest_career_goal') || 'Full-Stack Developer';
-  });
-  const [editBio, setEditBio] = useState(() => {
-    return localStorage.getItem('codequest_bio') || 'Leveling up my software engineering skills on CodeQuest Academy.';
-  });
+  const [editCareerGoal, setEditCareerGoal] = useState(() => careerGoal || 'Full-Stack Developer');
+  const [editBio, setEditBio] = useState(() => bio || 'Leveling up my software engineering skills on CodeQuest Academy.');
 
   // Sync edit fields when store updates
   React.useEffect(() => {
-    if (username) {
-      setEditUsername(username);
-    }
-  }, [username]);
+    if (username) setEditUsername(username);
+    if (careerGoal) setEditCareerGoal(careerGoal);
+    if (bio) setEditBio(bio);
+  }, [username, careerGoal, bio]);
   
   const [isSaving, setIsSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -127,9 +124,7 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
         }
       }
 
-      await updateProfile(trimmed, avatarIcon);
-      localStorage.setItem('codequest_career_goal', editCareerGoal);
-      localStorage.setItem('codequest_bio', editBio.trim());
+      await updateProfile(trimmed, avatarIcon, editCareerGoal, editBio.trim());
 
       sounds.playCorrect();
       setIsEditingProfile(false);
@@ -232,15 +227,28 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
     return true;
   });
 
+  const handleRefreshProfile = async () => {
+    if (session?.user?.id) {
+      await useGameStore.getState().syncWithSupabase(session.user.id);
+      showToast('Profile data refreshed!');
+    }
+  };
+
   return (
-    <div className="max-w-3xl lg:max-w-4xl mx-auto py-6 sm:py-8 px-2 sm:px-4 pb-28 space-y-6 sm:space-y-8 animate-in fade-in duration-300">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-gradient-to-r from-sky-600 to-indigo-600 text-white text-xs font-black px-5 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 border border-white/20 animate-bounce">
-          <CheckCheck size={16} className="text-emerald-300" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+    <PullToRefresh onRefresh={handleRefreshProfile} label="profile stats">
+      <div className="max-w-3xl lg:max-w-4xl mx-auto py-6 sm:py-8 px-2 sm:px-4 pb-28 space-y-6 sm:space-y-8 animate-in fade-in duration-300">
+        {/* Full-width Responsive Rectangular Toast Notification */}
+        {toastMessage && (
+          <div className="fixed top-16 left-2 right-2 sm:left-4 sm:right-4 md:max-w-3xl md:mx-auto z-50 bg-[#181926]/98 text-sky-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-sky-400/40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 text-xs sm:text-sm font-bold leading-snug">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <CheckCheck size={18} className="text-emerald-400 shrink-0" />
+              <span className="whitespace-normal break-words">{toastMessage}</span>
+            </div>
+            <button onClick={() => setToastMessage(null)} className="text-sky-300/60 hover:text-sky-200 text-xs font-bold shrink-0 cursor-pointer">
+              Dismiss
+            </button>
+          </div>
+        )}
 
       {/* Back to Learn Navigation Bar */}
       {onGoToLearn && (
@@ -722,5 +730,6 @@ export default function ProfileTab({ session, onStartPractice, onGoToLearn, onOp
         </div>
       </div>
     </div>
+  </PullToRefresh>
   );
 }

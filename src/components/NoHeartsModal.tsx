@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Zap, Sparkles, Clock, ArrowRight, X, ShieldAlert, CheckCircle2, Crown, Infinity } from 'lucide-react';
-import { useGameStore, HEART_REFILL_INTERVAL_MS, MAX_HEARTS } from '../store/useGameStore';
+import { useGameStore, HEART_REFILL_INTERVAL_MS, PRACTICE_COOLDOWN_MS, MAX_HEARTS } from '../store/useGameStore';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface NoHeartsModalProps {
@@ -20,8 +20,9 @@ export default function NoHeartsModal({
   onQuitLesson,
   onOpenSubscription,
 }: NoHeartsModalProps) {
-  const { hearts, xp, buyHeartRefill, earnHeart, lastHeartLostAt, checkHeartRefill, isPro } = useGameStore();
+  const { hearts, xp, buyHeartRefill, lastHeartLostAt, lastPracticeAt, checkHeartRefill, isPro } = useGameStore();
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
+  const [practiceCdMs, setPracticeCdMs] = useState<number>(0);
   const [refillError, setRefillError] = useState<string | null>(null);
   const [justRefilled, setJustRefilled] = useState(false);
   const prevHeartsRef = React.useRef(hearts);
@@ -41,6 +42,16 @@ export default function NoHeartsModal({
     const updateTimer = () => {
       checkHeartRefill();
       const state = useGameStore.getState();
+      
+      // Calculate practice cooldown
+      if (state.lastPracticeAt) {
+        const pElapsed = Date.now() - Number(state.lastPracticeAt);
+        const pRemaining = Math.max(0, PRACTICE_COOLDOWN_MS - pElapsed);
+        setPracticeCdMs(pRemaining);
+      } else {
+        setPracticeCdMs(0);
+      }
+
       if (state.hearts >= MAX_HEARTS) {
         setTimeLeftMs(0);
         return;
@@ -82,10 +93,6 @@ export default function NoHeartsModal({
     if (success) {
       onClose();
     }
-  };
-
-  const handleClaimFreeHeart = async () => {
-    await earnHeart();
   };
 
   return (
@@ -249,24 +256,26 @@ export default function NoHeartsModal({
                 {onStartPractice && (
                   <button
                     onClick={() => {
-                      onClose();
-                      onStartPractice();
+                      if (practiceCdMs === 0) {
+                        onClose();
+                        onStartPractice();
+                      }
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-wider shadow-[0_4px_0_rgb(6,95,70)] active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={practiceCdMs > 0}
+                    className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      practiceCdMs === 0
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_4px_0_rgb(6,95,70)] active:translate-y-1 cursor-pointer'
+                        : 'bg-white/5 border border-white/10 text-white/40 cursor-not-allowed'
+                    }`}
                   >
-                    <Zap size={16} />
-                    <span>Practice to Earn +1 Heart</span>
+                    <Zap size={16} className={practiceCdMs === 0 ? 'text-amber-300 fill-amber-300' : ''} />
+                    <span>
+                      {practiceCdMs > 0 
+                        ? `Practice Cooldown (${Math.floor(practiceCdMs / 60000)}m ${Math.floor((practiceCdMs % 60000) / 1000).toString().padStart(2, '0')}s)`
+                        : 'Practice Arena (+1 Heart)'}
+                    </span>
                   </button>
                 )}
-
-                {/* Instant Quick Recharge Button */}
-                <button
-                  onClick={handleClaimFreeHeart}
-                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Heart size={14} className="fill-rose-400 text-rose-400" />
-                  <span>Quick Recharge (+1 Heart)</span>
-                </button>
               </>
             )}
 

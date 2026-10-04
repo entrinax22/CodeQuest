@@ -41,6 +41,17 @@ export default function LessonPlayer({ lesson, initialMode = 'briefing', onExit,
     commonMistake: 'Rushing through exercises without reading question details.'
   };
 
+  // Helper to prevent spoiled placeholders in create challenge input
+  const getExercisePlaceholder = (ex: Exercise) => {
+    if (!ex.placeholder) return 'Type your answer code here...';
+    const cleanP = ex.placeholder.trim().toLowerCase();
+    const isSpoiled = ex.correct.some(c => c.trim().toLowerCase() === cleanP);
+    if (isSpoiled) {
+      return 'Type your answer code here...';
+    }
+    return ex.placeholder;
+  };
+
   const exercise: Exercise = lesson.exercises[currentIdx];
   const totalExercises = lesson.exercises.length;
   const numBlanks = exercise.blanks ? exercise.blanks.length : 0;
@@ -620,7 +631,7 @@ export default function LessonPlayer({ lesson, initialMode = 'briefing', onExit,
                           }
                         }}
                         disabled={isEvaluated !== null}
-                        placeholder={exercise.placeholder || 'Type the code here...'}
+                        placeholder={getExercisePlaceholder(exercise)}
                         autoFocus
                         className="w-full bg-[#0A0C13] border-2 border-sky-500/40 focus:border-sky-400 rounded-2xl px-4 py-3.5 text-base sm:text-lg text-sky-200 placeholder-white/20 font-mono tracking-wide focus:outline-none focus:ring-4 focus:ring-sky-500/20 transition-all shadow-inner"
                       />

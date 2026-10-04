@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useGameStore } from './store/useGameStore';
 import { supabase } from './lib/supabase';
+import { sounds } from './lib/sound';
 import LessonPlayer from './components/LessonPlayer';
 import Auth from './components/Auth';
 import SocialTab from './components/SocialTab';
@@ -16,24 +17,26 @@ import ProfileTab from './components/ProfileTab';
 import SettingsTab from './components/SettingsTab';
 import SubscriptionModal from './components/SubscriptionModal';
 import { Lesson, Module } from './data/curriculum';
-import { HEART_REFILL_INTERVAL_MS, MAX_HEARTS } from './store/useGameStore';
+import { HEART_REFILL_INTERVAL_MS, PRACTICE_COOLDOWN_MS, MAX_HEARTS } from './store/useGameStore';
 import TopicPreviewModal from './components/TopicPreviewModal';
 import CurriculumHandbookModal from './components/CurriculumHandbookModal';
 import LearningPathSelectorModal from './components/LearningPathSelectorModal';
 import LearningPathsHub from './components/LearningPathsHub';
+import SplashScreen from './components/SplashScreen';
 import { getPathModules, getPathMeta, PATHS_METADATA, isModuleUnlockedForUser, isPathUnlockedForUser } from './data/learningPaths';
 
 export default function App() {
   const { 
     xp, hearts, streak, level, syncWithSupabase, isSyncing, 
     buyHeartRefill, buyStreakFreeze, completedLessons, completeLesson,
-    lastHeartLostAt, checkHeartRefill, avatarIcon, username,
+    lastHeartLostAt, lastPracticeAt, checkHeartRefill, avatarIcon, username,
     streakFreezesCount, doubleXpUntil, buyDoubleXpBoost,
     activePathId, setActivePath, isPro, subscriptionTier,
-    unlockedAdvancedPathId, setStudentPlusAdvancedPath,
+    unlockedAdvancedPathId, unlockedAdvancedPathIds, setStudentPlusAdvancedPath,
     soundEnabled, toggleSound
   } = useGameStore();
 
+  const [showSplash, setShowSplash] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'learn' | 'leaderboard' | 'shop' | 'social' | 'profile' | 'settings'>('learn');
   const [learnView, setLearnView] = useState<'paths' | 'roadmap'>('paths');
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
@@ -48,24 +51,34 @@ export default function App() {
   const [showHeartsModal, setShowHeartsModal] = useState(false);
   const [isPracticing, setIsPracticing] = useState(false);
   const [heartTimerFormatted, setHeartTimerFormatted] = useState<string>('');
+  const [practiceCdMs, setPracticeCdMs] = useState<number>(0);
   const prevHeartsRef = React.useRef(hearts);
 
   // Detect when hearts increase and show celebratory banner
   useEffect(() => {
     if (hearts > prevHeartsRef.current && prevHeartsRef.current < MAX_HEARTS) {
       const added = hearts - prevHeartsRef.current;
-      setHeartRefillToast(`+${added} Heart Refilled! (${hearts}/${MAX_HEARTS} Hearts ready)`);
+      setHeartRefillToast(`+${added} Heart Refilled! (${hearts}/${MAX_HEARTS} Hearts)`);
       const timer = setTimeout(() => setHeartRefillToast(null), 3500);
       return () => clearTimeout(timer);
     }
     prevHeartsRef.current = hearts;
   }, [hearts]);
 
-  // Continuous heart refill checker and countdown timer
+  // Continuous heart refill & practice cooldown checker
   useEffect(() => {
     const tick = () => {
       checkHeartRefill();
       const state = useGameStore.getState();
+
+      if (state.lastPracticeAt) {
+        const pElapsed = Date.now() - Number(state.lastPracticeAt);
+        const pRemaining = Math.max(0, PRACTICE_COOLDOWN_MS - pElapsed);
+        setPracticeCdMs(pRemaining);
+      } else {
+        setPracticeCdMs(0);
+      }
+
       if (state.hearts >= MAX_HEARTS) {
         setHeartTimerFormatted('');
         return;
@@ -88,18 +101,40 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session?.user) syncWithSupabase(session.user.id);
+      if (session?.user) {
+        syncWithSupabase(session.user.id);
+      } else {
+        useGameStore.getState().resetStore();
+      }
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
-      if (session?.user) syncWithSupabase(session.user.id);
+      if (event === 'SIGNED_OUT' || !session) {
+        useGameStore.getState().resetStore();
+      } else if (session?.user) {
+        syncWithSupabase(session.user.id);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, [syncWithSupabase]);
+
+  // Listen for admin subscription approval event in real-time
+  useEffect(() => {
+    const handleApproval = (e: any) => {
+      const payment = e.detail;
+      if (payment && payment.username === username) {
+        useGameStore.getState().upgradeToPro(payment.tier, payment.cycle);
+        setLockedToast(`PRO plan approved! Enjoy full access 🎉`);
+        if (session?.user) syncWithSupabase(session.user.id);
+      }
+    };
+    window.addEventListener('codequest_subscription_approved', handleApproval);
+    return () => window.removeEventListener('codequest_subscription_approved', handleApproval);
+  }, [username, session, syncWithSupabase]);
 
   // Auto-dismiss locked toast
   useEffect(() => {
@@ -127,6 +162,14 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  const handleSplashFinish = React.useCallback(() => {
+    setShowSplash(false);
+  }, []);
+
+  if (showSplash) {
+    return <SplashScreen onFinish={handleSplashFinish} />;
   }
 
   if (!session) {
@@ -298,19 +341,29 @@ export default function App() {
         </div>
       </header>
 
-      {/* Floating Toast Notification for Heart Refills */}
+      {/* Full-width Responsive Rectangular Toast Notification for Heart Refills */}
       {heartRefillToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-rose-600 to-pink-600 text-white px-5 py-2.5 rounded-full shadow-2xl font-bold text-xs flex items-center gap-2 border border-white/20 animate-bounce">
-          <Heart size={16} className="fill-white" />
-          <span>{heartRefillToast}</span>
+        <div className="fixed top-16 left-2 right-2 sm:left-4 sm:right-4 md:max-w-3xl md:mx-auto z-50 bg-[#1A1118]/98 text-rose-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl font-bold text-xs sm:text-sm flex items-center justify-between gap-3 border border-rose-500/40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 leading-snug">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Heart size={18} className="text-rose-400 fill-rose-500 shrink-0" />
+            <span className="whitespace-normal break-words">{heartRefillToast}</span>
+          </div>
+          <button onClick={() => setHeartRefillToast(null)} className="text-rose-300/60 hover:text-rose-200 text-xs font-bold shrink-0 cursor-pointer">
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Floating Toast Notification for Locked Nodes */}
+      {/* Full-width Responsive Rectangular Toast Notification for System Alerts / Unlocks */}
       {lockedToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-rose-600 text-white px-5 py-2.5 rounded-full shadow-2xl font-bold text-xs flex items-center gap-2 animate-bounce">
-          <AlertCircle size={16} />
-          <span>{lockedToast}</span>
+        <div className="fixed top-16 left-2 right-2 sm:left-4 sm:right-4 md:max-w-3xl md:mx-auto z-50 bg-[#181926]/98 text-sky-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl font-bold text-xs sm:text-sm flex items-center justify-between gap-3 border border-sky-400/40 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 leading-snug">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle size={18} className="text-sky-400 shrink-0" />
+            <span className="whitespace-normal break-words">{lockedToast}</span>
+          </div>
+          <button onClick={() => setLockedToast(null)} className="text-sky-300/60 hover:text-sky-200 text-xs font-bold shrink-0 cursor-pointer">
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -436,7 +489,7 @@ export default function App() {
                 const completedModLessons = module.lessons.filter(l => completedLessons.includes(l.id)).length;
                 const modProgress = Math.round((completedModLessons / totalModLessons) * 100);
                 const theme = currentPathMeta.colorTheme;
-                const isModuleAdvanceLocked = !isModuleUnlockedForUser(activePathId, module, subscriptionTier, unlockedAdvancedPathId);
+                const isModuleAdvanceLocked = !isModuleUnlockedForUser(activePathId, module, subscriptionTier, unlockedAdvancedPathId, unlockedAdvancedPathIds);
 
                 return (
                   <div key={module.id} className="w-full flex flex-col items-center">
@@ -448,7 +501,7 @@ export default function App() {
                             {module.subtitle}
                           </span>
                           
-                          {(module.isAdvanced || currentPathMeta.isAdvancedTrack) && (
+                          {module.isAdvanced && (
                             <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-sm ${
                               isModuleAdvanceLocked 
                                 ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40' 
@@ -722,9 +775,16 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setIsPracticing(true)}
-                  className="bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-400/30 px-3.5 py-2 rounded-xl font-black text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shrink-0"
+                  disabled={practiceCdMs > 0}
+                  className={`px-3.5 py-2 rounded-xl font-black text-xs uppercase tracking-wider transition-all shrink-0 ${
+                    practiceCdMs === 0
+                      ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-400/30 active:scale-95 cursor-pointer'
+                      : 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
+                  }`}
                 >
-                  Practice
+                  {practiceCdMs > 0
+                    ? `Cooldown (${Math.floor(practiceCdMs / 60000)}:${Math.floor((practiceCdMs % 60000) / 1000).toString().padStart(2, '0')})`
+                    : 'Practice'}
                 </button>
               </div>
             </div>
@@ -741,12 +801,11 @@ export default function App() {
       </main>
 
       {/* Fixed Bottom Navigation Dock (Responsive Centered Pill on Desktop) */}
-      <nav className="fixed bottom-0 left-0 right-0 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-xl sm:rounded-3xl sm:border sm:border-white/10 sm:shadow-[0_10px_35px_rgba(0,0,0,0.8)] h-18 sm:h-20 bg-[#0C0D14]/95 border-t border-white/10 px-2 sm:px-6 flex items-center justify-around z-30 backdrop-blur-xl">
+      <nav className="fixed bottom-0 left-0 right-0 sm:bottom-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-lg sm:rounded-3xl sm:border sm:border-white/10 sm:shadow-[0_10px_35px_rgba(0,0,0,0.8)] h-18 sm:h-20 bg-[#0C0D14]/95 border-t border-white/10 px-2 sm:px-6 flex items-center justify-around z-30 backdrop-blur-xl">
         <NavButton active={activeTab === 'learn'} icon={<BookOpen />} label="Learn" onClick={() => { setActiveTab('learn'); setLearnView('paths'); }} />
         <NavButton active={activeTab === 'social'} icon={<Users />} label="Friends" onClick={() => setActiveTab('social')} />
         <NavButton active={activeTab === 'leaderboard'} icon={<Trophy />} label="Leagues" onClick={() => setActiveTab('leaderboard')} />
         <NavButton active={activeTab === 'shop'} icon={<ShoppingBag />} label="Shop" onClick={() => setActiveTab('shop')} />
-        <NavButton active={activeTab === 'profile'} icon={<User />} label="Profile" customAvatar={avatarIcon} onClick={() => setActiveTab('profile')} />
         <NavButton active={activeTab === 'settings'} icon={<Settings />} label="Settings" onClick={() => setActiveTab('settings')} />
       </nav>
 
@@ -829,10 +888,12 @@ export default function App() {
       />
 
       {/* SaaS Subscription Modal */}
-      <SubscriptionModal
-        isOpen={showSubscriptionModal}
-        onClose={() => setShowSubscriptionModal(false)}
-      />
+      {showSubscriptionModal && (
+        <SubscriptionModal
+          isOpen={showSubscriptionModal}
+          onClose={() => setShowSubscriptionModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -919,9 +980,14 @@ function NavButton({
 }) {
   return (
     <button 
-      onClick={onClick}
-      className={`flex flex-col items-center gap-1 transition-all py-1 px-2.5 sm:px-3 rounded-xl ${
-        active ? 'text-sky-400 scale-105' : 'text-white/40 hover:text-white/70'
+      onClick={() => {
+        sounds.playClick();
+        onClick();
+      }}
+      className={`flex flex-col items-center gap-1 transition-all py-1 px-2.5 sm:px-3 rounded-2xl cursor-pointer ${
+        active 
+          ? 'text-sky-400 bg-sky-500/15 border border-sky-400/30 scale-105 shadow-[0_0_15px_rgba(56,189,248,0.25)]' 
+          : 'text-white/40 hover:text-white/80 hover:bg-white/5'
       }`}
     >
       {customAvatar ? (

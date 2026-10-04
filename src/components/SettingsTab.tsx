@@ -28,15 +28,17 @@ const DAILY_GOALS = [
 export default function SettingsTab({ session, onGoToProfile, onOpenSubscription }: SettingsTabProps) {
   const { 
     soundEnabled, toggleSound, username, avatarIcon, level, xp, streak, leagueId,
-    isPro, subscriptionTier, subscriptionPlanCycle, cancelSubscription
+    isPro, subscriptionTier, subscriptionPlanCycle, cancelSubscription, role
   } = useGameStore();
 
+  const isAdmin = role === 'admin' || session?.user?.email === 'mark.entrina12@gmail.com';
+
   const [dailyGoal, setDailyGoal] = useState<'casual' | 'regular' | 'serious' | 'intense'>(() => {
-    return (localStorage.getItem('codequest_daily_goal') as any) || 'regular';
+    return username ? ((localStorage.getItem(`codequest_daily_goal_${username}`) as any) || 'regular') : 'regular';
   });
   
   // Security & Password Change state
-  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(true);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -59,7 +61,9 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
 
   const handleSelectGoal = (goalId: 'casual' | 'regular' | 'serious' | 'intense') => {
     setDailyGoal(goalId);
-    localStorage.setItem('codequest_daily_goal', goalId);
+    if (username) {
+      localStorage.setItem(`codequest_daily_goal_${username}`, goalId);
+    }
     sounds.playCorrect();
     notifySaved(`Goal updated to ${DAILY_GOALS.find(g => g.id === goalId)?.label}! 🎯`);
   };
@@ -75,6 +79,10 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
     }
     if (newPassword !== confirmPassword) {
       setPasswordError('Passwords do not match. Please verify.');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to update your account password?')) {
       return;
     }
 
@@ -107,6 +115,7 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
 
   const handleSignOut = async () => {
     sounds.playCorrect();
+    useGameStore.getState().resetStore();
     if (supabase) {
       await supabase.auth.signOut();
     }
@@ -117,11 +126,16 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
 
   return (
     <div className="max-w-2xl lg:max-w-3xl mx-auto py-6 sm:py-8 px-3 sm:px-6 pb-28 space-y-5 animate-in fade-in duration-300">
-      {/* Toast Notice */}
+      {/* Full-width Responsive Rectangular Toast Notification */}
       {savedNotice && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-sky-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-2xl z-50 flex items-center gap-1.5 border border-white/20 animate-bounce">
-          <Check size={13} className="text-emerald-300" />
-          <span>{savedNotice}</span>
+        <div className="fixed top-16 left-2 right-2 sm:left-4 sm:right-4 md:max-w-3xl md:mx-auto z-50 bg-[#181926]/98 text-sky-200 px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-sky-400/40 backdrop-blur-md text-xs sm:text-sm font-bold leading-snug animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Check size={18} className="text-emerald-400 shrink-0" />
+            <span className="whitespace-normal break-words">{savedNotice}</span>
+          </div>
+          <button onClick={() => setSavedNotice(null)} className="text-sky-300/60 hover:text-sky-200 text-xs font-bold shrink-0 cursor-pointer">
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -182,30 +196,32 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
       </div>
 
       {/* Admin Portal Access Card (Separated & Role Protected) */}
-      <div className="bg-gradient-to-br from-amber-500/10 via-[#12131C] to-amber-600/5 border border-amber-500/30 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-            <Shield size={22} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">Admin Portal (QR & Approvals)</h3>
-              <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400 text-amber-950 px-2.5 py-0.5 rounded-md shadow-sm">Admin Only</span>
+      {isAdmin && (
+        <div className="bg-gradient-to-br from-amber-500/10 via-[#12131C] to-amber-600/5 border border-amber-500/30 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+              <Shield size={22} />
             </div>
-            <p className="text-white/50 text-xs mt-1 leading-relaxed">
-              Upload payment QR codes & review manual subscription approvals securely
-            </p>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-sm sm:text-base font-bold text-white tracking-tight">Admin Portal (QR & Approvals)</h3>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400 text-amber-950 px-2.5 py-0.5 rounded-md shadow-sm">Admin Only</span>
+              </div>
+              <p className="text-white/50 text-xs mt-1 leading-relaxed">
+                Upload payment QR codes & review manual subscription approvals securely
+              </p>
+            </div>
           </div>
-        </div>
 
-        <button
-          onClick={() => setShowAdminPortal(true)}
-          className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-400 hover:brightness-110 text-amber-950 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shrink-0 flex items-center justify-center gap-2"
-        >
-          <QrCode size={15} />
-          <span>Open Portal</span>
-        </button>
-      </div>
+          <button
+            onClick={() => setShowAdminPortal(true)}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-400 hover:brightness-110 text-amber-950 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md shrink-0 flex items-center justify-center gap-2"
+          >
+            <QrCode size={15} />
+            <span>Open Portal</span>
+          </button>
+        </div>
+      )}
 
       {/* Audio & Haptics Settings */}
       <div className="bg-[#12131C] border border-white/10 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
@@ -322,6 +338,13 @@ export default function SettingsTab({ session, onGoToProfile, onOpenSubscription
                   {showConfirmPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              {confirmPassword && (
+                <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${
+                  newPassword === confirmPassword ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                  {newPassword === confirmPassword ? '✓ Passwords match' : '✕ Passwords do not match'}
+                </div>
+              )}
             </div>
 
             {passwordError && (

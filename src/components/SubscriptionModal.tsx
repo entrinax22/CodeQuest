@@ -50,6 +50,69 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
   const [refNumber, setRefNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState<'plans' | 'checkout' | 'pending_approval' | 'success'>('plans');
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
+
+  // User payment requests for tracker
+  const [userRequests, setUserRequests] = useState<any[]>([]);
+  const [activeModalTab, setActiveModalTab] = useState<'plans' | 'tracker'>('plans');
+
+  const reqKey = (r: any) => `${r.refNumber || r.reference_number}_${r.tier}_${r.method}`;
+
+  const loadRequests = async () => {
+    let localRequests: any[] = [];
+    const saved = localStorage.getItem('codequest_pending_payments');
+    if (saved && username && username !== 'CodeExplorer') {
+      try {
+        const all = JSON.parse(saved);
+        localRequests = all.filter((p: any) => p.username === username && p.username !== 'CodeExplorer');
+      } catch {}
+    }
+
+    if (supabase && username && username !== 'CodeExplorer') {
+      try {
+        const { data, error } = await supabase
+          .from('payment_approvals')
+          .select('*')
+          .ilike('username', username)
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          const dbMapped = data.map(item => ({
+            id: item.id,
+            username: item.username,
+            tier: item.tier,
+            cycle: item.cycle,
+            method: item.method,
+            refNumber: item.reference_number,
+            timestamp: new Date(item.created_at).getTime(),
+            status: item.status
+          }));
+
+          const mergedMap = new Map<string, any>();
+          localRequests.forEach(r => mergedMap.set(reqKey(r), r));
+          dbMapped.forEach(r => mergedMap.set(reqKey(r), r));
+
+          setUserRequests(Array.from(mergedMap.values()));
+          return;
+        }
+      } catch (err) {
+        console.error('Error loading db payment requests:', err);
+      }
+    }
+    setUserRequests(localRequests);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadRequests();
+    window.addEventListener('codequest_subscription_approved', loadRequests);
+    window.addEventListener('storage', loadRequests);
+    return () => {
+      window.removeEventListener('codequest_subscription_approved', loadRequests);
+      window.removeEventListener('storage', loadRequests);
+    };
+  }, [isOpen, username]);
 
   // Load admin QR config & uploaded QR images from localStorage or Supabase DB
   const [qrConfig, setQrConfig] = useState(() => {
@@ -102,7 +165,18 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
     return () => window.removeEventListener('codequest_qr_config_updated', handleQrUpdate);
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  // Listen for admin approval while waiting in pending_approval state
+  useEffect(() => {
+    const handleApproval = (e: any) => {
+      const payment = e.detail;
+      if (payment && payment.username === username) {
+        setStep('success');
+        sounds.playFanfare();
+      }
+    };
+    window.addEventListener('codequest_subscription_approved', handleApproval);
+    return () => window.removeEventListener('codequest_subscription_approved', handleApproval);
+  }, [username]);
 
   const PRICING = {
     PHP: {
@@ -136,7 +210,7 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
   const handleStartCheckout = (tier: SubscriptionTier) => {
     if (tier === 'basic' || tier === 'free') {
       if (!isBasicTier) {
-        handleCancelSub();
+        setShowCancelConfirm(true);
       } else {
         onClose();
       }
@@ -157,30 +231,65 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
     setIsProcessing(true);
     sounds.playCorrect();
 
-    setTimeout(() => {
-      // Save to pending payments queue
-      const existing = JSON.parse(localStorage.getItem('codequest_pending_payments') || '[]');
-      const newPayment = {
-        id: `pay-${Date.now()}`,
-        username: username || 'CodeExplorer',
-        tier: selectedTier,
-        cycle: billingCycle,
-        method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
-        refNumber: refNumber.trim(),
-        timestamp: Date.now(),
-        status: 'pending'
-      };
-      localStorage.setItem('codequest_pending_payments', JSON.stringify([newPayment, ...existing]));
+    if (supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        const rate = selectedTier === 'pro' 
+          ? (billingCycle === 'yearly' ? 99 : 199)
+          : (billingCycle === 'yearly' ? 49 : 99);
+        const calcAmount = billingCycle === 'yearly' ? rate * 12 : rate;
 
-      setIsProcessing(false);
-      setStep('pending_approval');
-      sounds.playFanfare();
-    }, 1000);
+        const { error } = await supabase
+          .from('payment_approvals')
+          .insert([{
+            user_id: user?.id || null,
+            username: username || 'CodeExplorer',
+            method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
+            reference_number: refNumber.trim(),
+            amount: calcAmount,
+            tier: selectedTier,
+            cycle: billingCycle,
+            status: 'pending',
+            proof_image: ''
+          }]);
+
+        if (error) {
+          console.warn('payment_approvals insert error:', error.message);
+        }
+      } catch (err) {
+        console.error('payment_approvals insert error:', err);
+      }
+    }
+
+    // Save locally as fallback
+    const existing = JSON.parse(localStorage.getItem('codequest_pending_payments') || '[]');
+    const newPayment = {
+      id: `pay-${Date.now()}`,
+      username: username || 'CodeExplorer',
+      tier: selectedTier,
+      cycle: billingCycle,
+      method: paymentMethod === 'gcash' ? 'GCash' : 'Maya',
+      refNumber: refNumber.trim(),
+      timestamp: Date.now(),
+      status: 'pending'
+    };
+    localStorage.setItem('codequest_pending_payments', JSON.stringify([newPayment, ...existing]));
+
+    setIsProcessing(false);
+    setStep('pending_approval');
+    sounds.playFanfare();
   };
 
   const handleCancelSub = async () => {
     await cancelSubscription();
+    setShowCancelConfirm(false);
+    setCancelNotice('Successfully downgraded to Basic Free plan.');
     sounds.playWrong();
+    setTimeout(() => {
+      setCancelNotice(null);
+      onClose();
+    }, 2200);
   };
 
   const getTierDisplayName = (tier: SubscriptionTier) => {
@@ -194,6 +303,12 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="relative w-full max-w-3xl bg-[#0B0C10] border border-white/10 rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col max-h-[92vh]">
+        {cancelNotice && (
+          <div className="bg-rose-500/20 text-rose-300 border-b border-rose-500/30 px-5 py-3 text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+            <Check size={15} className="text-rose-400" />
+            <span>{cancelNotice}</span>
+          </div>
+        )}
         
         {/* Header - No admin button here anymore per requirement */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-[#0F1015] shrink-0">
@@ -238,9 +353,120 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
           </div>
         </div>
 
+        {/* Tabs: Plans / Request Tracker */}
+        {step === 'plans' && (
+          <div className="flex border-b border-white/10 bg-[#0D0E13] px-4 pt-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('plans')}
+              className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                activeModalTab === 'plans'
+                  ? 'border-amber-400 text-amber-400 bg-white/[0.02]'
+                  : 'border-transparent text-white/50 hover:text-white'
+              }`}
+            >
+              Subscription Plans
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveModalTab('tracker')}
+              className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeModalTab === 'tracker'
+                  ? 'border-amber-400 text-amber-400 bg-white/[0.02]'
+                  : 'border-transparent text-white/50 hover:text-white'
+              }`}
+            >
+              <span>Request Tracker</span>
+              {userRequests.filter(r => r.status === 'pending').length > 0 && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
-          {step === 'pending_approval' ? (
+          {activeModalTab === 'tracker' && step === 'plans' ? (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h4 className="text-sm font-bold text-white">Your Subscription Requests</h4>
+                  <p className="text-xs text-white/50">Track the status of your manual QR payment submissions</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const saved = localStorage.getItem('codequest_pending_payments');
+                    if (saved) {
+                      try {
+                        const all = JSON.parse(saved);
+                        setUserRequests(all.filter((p: any) => p.username === username));
+                      } catch {}
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 text-xs font-bold border border-white/10 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw size={13} />
+                  <span>Refresh Status</span>
+                </button>
+              </div>
+
+              {userRequests.length === 0 ? (
+                <div className="py-12 text-center text-white/40 text-xs space-y-2 bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+                  <QrCode size={32} className="mx-auto text-white/20 mb-2" />
+                  <p className="font-bold text-white/60">No payment requests submitted yet.</p>
+                  <p className="text-[11px] text-white/40 max-w-xs mx-auto">
+                    Choose StudentPlus or PRO VIP and submit your GCash/Maya reference number to start tracking your request here!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {userRequests.map((req) => (
+                    <div key={req.id} className="bg-white/[0.02] border border-white/10 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-white text-xs sm:text-sm">
+                            {req.tier === 'pro' ? 'CodeQuest PRO VIP' : 'StudentPlus Scholar'}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-white/80">
+                            {req.cycle}
+                          </span>
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                            req.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                            req.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                            'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}>
+                            {req.status === 'approved' ? '✅ Approved & Active' :
+                             req.status === 'rejected' ? '❌ Rejected' : '⏳ Pending Review'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-white/50 flex items-center gap-3">
+                          <span>Method: <strong className="text-white">{req.method}</strong></span>
+                          <span>Ref: <strong className="text-white font-mono">{req.refNumber}</strong></span>
+                          <span>Submitted: {new Date(req.timestamp).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+
+                      {req.status === 'approved' ? (
+                        <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                          Active Perks Unlocked
+                        </div>
+                      ) : req.status === 'rejected' ? (
+                        <div className="text-xs font-bold text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20">
+                          Please Resubmit
+                        </div>
+                      ) : (
+                        <div className="text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 flex items-center gap-1.5">
+                          <RefreshCw size={12} className="animate-spin" />
+                          <span>Waiting Admin Review</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : step === 'pending_approval' ? (
             <div className="py-12 px-4 text-center space-y-4 animate-in fade-in duration-300">
               <div className="w-14 h-14 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
                 <RefreshCw size={28} className="animate-spin" />
@@ -429,21 +655,23 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {isExpiringSoon && (
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      {isExpiringSoon && (
+                        <button
+                          onClick={() => handleStartCheckout('pro')}
+                          className="px-3 py-1.5 rounded-lg bg-amber-400 hover:brightness-110 text-amber-950 text-xs font-bold transition-all cursor-pointer"
+                        >
+                          Renew PRO
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleStartCheckout('pro')}
-                        className="px-3 py-1.5 rounded-lg bg-amber-400 hover:brightness-110 text-amber-950 text-xs font-bold transition-all cursor-pointer"
+                        onClick={() => setShowCancelConfirm(true)}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs border border-white/10 transition-colors cursor-pointer"
                       >
-                        Renew PRO
+                        Cancel
                       </button>
-                    )}
-                    <button
-                      onClick={handleCancelSub}
-                      className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs border border-white/10 transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
+                    </div>
                   </div>
                 </div>
               ) : isStudentPlus ? (
@@ -484,7 +712,7 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
                       Upgrade PRO
                     </button>
                     <button
-                      onClick={handleCancelSub}
+                      onClick={() => setShowCancelConfirm(true)}
                       className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-xs border border-white/10 transition-colors cursor-pointer"
                     >
                       Cancel
@@ -651,6 +879,37 @@ export default function SubscriptionModal({ isOpen, onClose, triggerSource }: Su
             </>
           )}
         </div>
+        {showCancelConfirm && (
+          <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-[#12131A] border border-rose-500/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center">
+              <div className="w-14 h-14 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl flex items-center justify-center mx-auto text-2xl">
+                ⚠️
+              </div>
+              <div>
+                <h4 className="text-lg font-black text-white">Cancel Subscription?</h4>
+                <p className="text-xs text-white/60 mt-1">
+                  Are you sure you want to cancel your subscription plan? You will revert to the Basic Free plan and lose premium perks.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs cursor-pointer transition-all"
+                >
+                  Keep Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelSub}
+                  className="flex-1 py-2.5 rounded-2xl bg-rose-500 hover:bg-rose-400 text-black font-black text-xs uppercase cursor-pointer transition-all shadow-lg"
+                >
+                  Yes, Cancel Plan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
