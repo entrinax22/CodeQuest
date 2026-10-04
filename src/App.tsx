@@ -896,8 +896,8 @@ export default function App() {
         />
       )}
 
-      {/* Live In-App Debug Console Drawer */}
-      <DebugConsoleModal />
+      {/* Live In-App Debug Console Drawer (Admin Only) */}
+      <DebugConsoleModal session={session} />
     </div>
   );
 }

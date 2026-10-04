@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Terminal, X, Copy, Trash2, Search, Filter, AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { logger, LogEntry } from '../lib/logger';
+import { useGameStore } from '../store/useGameStore';
 
-export default function DebugConsoleModal() {
+interface DebugConsoleModalProps {
+  session?: any;
+}
+
+export default function DebugConsoleModal({ session }: DebugConsoleModalProps) {
+  const { role } = useGameStore();
+  const isAdmin = role === 'admin' || session?.user?.email === 'mark.entrina12@gmail.com';
+
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -11,12 +19,17 @@ export default function DebugConsoleModal() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (!isAdmin) return;
     logger.init();
     const unsubscribe = logger.subscribe((newLogs) => {
       setLogs([...newLogs]);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isAdmin]);
+
+  if (!isAdmin) {
+    return null;
+  }
 
   const handleCopy = () => {
     const text = filteredLogs
